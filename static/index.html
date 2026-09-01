@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Reclaim Sentinel — Return Risk Operations</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div id="login-screen" class="login-screen">
+    <div class="login-grid"></div>
+    <div class="login-card">
+      <div class="brand-mark large">RS</div>
+      <p class="eyebrow">RETURN INTEGRITY SYSTEM</p>
+      <h1>Protect every refund<br><em>before</em> it leaves.</h1>
+      <p class="login-copy">Reclaim Sentinel combines evidence verification, ML risk scoring, and coordinated-return intelligence for merchant operations.</p>
+      <form id="login-form">
+        <label>Workspace identity<input name="username" value="sentinel-demo" autocomplete="username"></label>
+        <label>Access phrase<input name="password" type="password" value="reclaim-2026" autocomplete="current-password"></label>
+        <button class="btn btn-primary full" type="submit">Enter risk operations <span>↗</span></button>
+        <p id="login-error" class="error-text"></p>
+      </form>
+      <p class="demo-hint">Demo workspace · sentinel-demo</p>
+    </div>
+    <div class="login-foot">DEFENSE-ONLY · SYNTHETIC DATA · AUDITABLE BY DESIGN</div>
+  </div>
+
+  <div id="app-shell" class="app-shell hidden">
+    <aside class="sidebar">
+      <div class="sidebar-top">
+        <div class="brand-lockup"><div class="brand-mark">RS</div><div><strong>Reclaim</strong><span>Sentinel</span></div></div>
+        <div class="environment-pill"><i></i> DEMO ENVIRONMENT</div>
+        <nav>
+          <p class="nav-label">MONITOR</p>
+          <button class="nav-item active" data-page="overview"><span class="nav-icon">◈</span> Overview</button>
+          <button class="nav-item" data-page="cases"><span class="nav-icon">⊞</span> Return cases <b id="nav-case-count">12K</b></button>
+          <p class="nav-label nav-space">INVESTIGATE</p>
+          <button class="nav-item" data-page="patterns"><span class="nav-icon">⌘</span> Abuse patterns</button>
+          <button class="nav-item" data-page="spikes"><span class="nav-icon">↗</span> Return spikes <b class="alert-count">04</b></button>
+          <p class="nav-label nav-space">ASSURANCE</p>
+          <button class="nav-item" data-page="evaluation"><span class="nav-icon">▥</span> Model evaluation</button>
+          <button class="nav-item" data-page="audit"><span class="nav-icon">≡</span> Audit logs</button>
+        </nav>
+      </div>
+      <div class="sidebar-bottom">
+        <div class="health-row"><span class="status-dot"></span><div><strong>All systems operational</strong><small>Last check just now</small></div></div>
+        <div class="user-row"><div class="avatar">RO</div><div><strong>Risk Operations</strong><small>Merchant admin</small></div><button id="logout-btn" title="Sign out">↪</button></div>
+      </div>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div class="breadcrumb"><span>WORKSPACE</span><b>/</b><span id="crumb-current">OVERVIEW</span></div>
+        <div class="top-actions"><span class="live-time"><i></i> Live monitoring</span><button class="icon-btn" aria-label="Notifications">♧<b>3</b></button><button class="avatar top-avatar">RO</button></div>
+      </header>
+
+      <section id="page-overview" class="page active-page">
+        <div class="page-heading"><div><p class="eyebrow">TUESDAY · 01 SEP 2026</p><h1>Good morning, <em>Risk Ops.</em></h1><p class="subhead">Here’s what needs your attention across return verification.</p></div><button class="btn btn-secondary" data-page-jump="cases">View all cases <span>→</span></button></div>
+        <div class="metric-grid">
+          <article class="metric-card"><div class="metric-top"><span>RETURN CASES</span><span class="metric-icon blue">⊞</span></div><strong id="metric-cases">—</strong><div class="metric-trend positive">↑ <b>8.4%</b><small> vs previous period</small></div></article>
+          <article class="metric-card"><div class="metric-top"><span>PROTECTED VALUE</span><span class="metric-icon coral">₹</span></div><strong id="metric-value">—</strong><div class="metric-trend positive">↑ <b>12.1%</b><small> fraud prevented</small></div></article>
+          <article class="metric-card"><div class="metric-top"><span>NEEDS REVIEW</span><span class="metric-icon yellow">!</span></div><strong id="metric-review">—</strong><div class="metric-trend warning"><b>Action required</b><small> across active queue</small></div></article>
+          <article class="metric-card"><div class="metric-top"><span>MODEL HEALTH</span><span class="metric-icon green">✓</span></div><strong class="health-value">Online</strong><div class="metric-trend positive"><span class="pulse"></span><b>99.98%</b><small> scoring availability</small></div></article>
+        </div>
+        <div class="overview-grid">
+          <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">DECISION FLOW</p><h2>Return verdicts</h2></div><span class="period-chip">Last 30 days⌄</span></div><div class="decision-chart"><div class="donut"><div><strong id="donut-total">—</strong><small>ANALYZED</small></div></div><div class="legend"><div><i class="legend-dot approve"></i><span>Approve refund</span><b id="legend-approve">—</b></div><div><i class="legend-dot hold"></i><span>Hold refund</span><b id="legend-hold">—</b></div><div><i class="legend-dot escalate"></i><span>Human review</span><b id="legend-escalate">—</b></div></div></div><div class="chart-foot"><span><i class="legend-dot high"></i> High risk</span><span><i class="legend-dot mid"></i> Medium risk</span><span><i class="legend-dot low"></i> Low risk</span></div></article>
+          <article class="panel signal-panel"><div class="panel-heading"><div><p class="eyebrow">SIGNAL WATCH</p><h2>What’s moving</h2></div><span class="sparkline">╱╲╱╲╱╲</span></div><div class="signal-list"><div class="signal-item"><div class="signal-symbol coral-bg">↗</div><div><strong>Merchant M-014 return spike</strong><small>Suspicious rate is 2.8σ above baseline</small></div><span class="severity high">HIGH</span></div><div class="signal-item"><div class="signal-symbol purple-bg">⌘</div><div><strong>4 coordinated clusters</strong><small>Shared device + address identifiers</small></div><span class="severity medium">REVIEW</span></div><div class="signal-item"><div class="signal-symbol yellow-bg">◌</div><div><strong>Evidence gap detected</strong><small>12 cases missing warehouse scans</small></div><span class="severity medium">REVIEW</span></div></div><button class="text-link" data-page-jump="patterns">Open signal center →</button></article>
+        </div>
+        <article class="panel recent-panel"><div class="panel-heading"><div><p class="eyebrow">LIVE QUEUE</p><h2>Recent return cases</h2></div><button class="text-link" data-page-jump="cases">View all →</button></div><div class="table-wrap"><table><thead><tr><th>CASE</th><th>MERCHANT</th><th>RETURN REASON</th><th>AMOUNT</th><th>RISK</th><th>VERDICT</th><th></th></tr></thead><tbody id="recent-cases"></tbody></table></div></article>
+      </section>
+
+      <section id="page-cases" class="page"><div class="page-heading"><div><p class="eyebrow">MONITOR / RETURN CASES</p><h1>Return <em>cases.</em></h1><p class="subhead">Every refund request gets a pre-release verification decision.</p></div><div class="heading-actions"><button class="btn btn-secondary" id="export-btn">Export view ↓</button><button class="btn btn-primary" id="new-case-btn">+ Verify a case</button></div></div><div class="filter-bar"><div class="search-box">⌕<input id="case-search" placeholder="Search case, merchant or customer"></div><select id="filter-risk"><option value="">All risk levels</option><option value="high">High risk</option><option value="medium">Medium risk</option><option value="low">Low risk</option></select><select id="filter-reason"><option value="">All return reasons</option></select><span class="filter-count" id="case-count">— cases</span></div><article class="panel cases-panel"><div class="table-wrap"><table><thead><tr><th>CASE / CUSTOMER</th><th>MERCHANT</th><th>REASON</th><th>REFUND</th><th>RISK SCORE</th><th>VERDICT</th><th>REQUESTED</th><th></th></tr></thead><tbody id="cases-table"></tbody></table></div></article></section>
+
+      <section id="page-detail" class="page"><div class="page-heading detail-heading"><div><button class="back-link" data-page-jump="cases">← Back to cases</button><p class="eyebrow" id="detail-eyebrow">CASE DETAILS</p><h1 id="detail-title">Return <em>case.</em></h1><p class="subhead" id="detail-subhead">Pre-refund verification record</p></div><div id="detail-verdict"></div></div><div id="detail-content"></div></section>
+
+      <section id="page-patterns" class="page"><div class="page-heading"><div><p class="eyebrow">INVESTIGATE / GRAPH ANALYSIS</p><h1>Abuse <em>patterns.</em></h1><p class="subhead">Coordinated return behavior, used only as supporting evidence.</p></div><span class="method-note">NETWORKX GRAPH · 24 MERCHANTS</span></div><div class="metric-grid compact"><article class="metric-card"><div class="metric-top"><span>GRAPH NODES</span></div><strong id="graph-nodes">—</strong><div class="metric-caption">customers, devices, addresses</div></article><article class="metric-card"><div class="metric-top"><span>LINKED CASES</span></div><strong id="linked-cases">—</strong><div class="metric-caption">above evidence threshold</div></article><article class="metric-card"><div class="metric-top"><span>ACTIVE CLUSTERS</span></div><strong id="active-clusters">—</strong><div class="metric-caption">requiring review</div></article></div><article class="panel"><div class="panel-heading"><div><p class="eyebrow">COORDINATED RETURN SIGNALS</p><h2>Pattern queue</h2></div><span class="legend-note"><i class="legend-dot purple"></i> Supporting evidence only</span></div><div id="patterns-list" class="pattern-list"></div></article><div class="explain-strip"><strong>Why graph intelligence?</strong><span>Shared identifiers help connect return behavior that looks ordinary in isolation. The graph score can never approve or hold funds by itself.</span></div></section>
+
+      <section id="page-spikes" class="page"><div class="page-heading"><div><p class="eyebrow">INVESTIGATE / STATISTICAL MONITORING</p><h1>Return <em>spikes.</em></h1><p class="subhead">Transparent anomaly detection across merchant return behavior.</p></div><span class="method-note">4-WEEK ROLLING BASELINE · Z-DEVIATION</span></div><article class="panel"><div class="panel-heading"><div><p class="eyebrow">MERCHANT ANOMALIES</p><h2>Unusual suspicious-return activity</h2></div></div><div class="spike-table-wrap"><table><thead><tr><th>MERCHANT</th><th>WINDOW</th><th>BASELINE</th><th>CURRENT RATE</th><th>DEVIATION</th><th>SEVERITY</th><th></th></tr></thead><tbody id="spikes-table"></tbody></table></div></article><div class="explain-strip"><strong>Method note</strong><span>Suspicious activity is defined by pre-refund evidence signals. We compare the current 7-day window with four prior weekly rates and show the deviation transparently.</span></div></section>
+
+      <section id="page-evaluation" class="page"><div class="page-heading"><div><p class="eyebrow">ASSURANCE / MODEL EVALUATION</p><h1>Model <em>evaluation.</em></h1><p class="subhead">Measured on data the classifier never saw during training.</p></div><span class="held-out">● HELD-OUT TEST SET</span></div><div class="metric-grid eval-metrics"><article class="metric-card"><div class="metric-top"><span>PRECISION</span><span class="metric-icon green">◎</span></div><strong id="eval-precision">—</strong><div class="metric-caption">fraudulent return class</div></article><article class="metric-card"><div class="metric-top"><span>RECALL</span><span class="metric-icon coral">⌁</span></div><strong id="eval-recall">—</strong><div class="metric-caption">fraud caught before refund</div></article><article class="metric-card"><div class="metric-top"><span>F1 SCORE</span><span class="metric-icon blue">✦</span></div><strong id="eval-f1">—</strong><div class="metric-caption">balanced performance</div></article><article class="metric-card"><div class="metric-top"><span>PR-AUC</span><span class="metric-icon purple">⌁</span></div><strong id="eval-prauc">—</strong><div class="metric-caption">imbalanced-class quality</div></article></div><div class="eval-grid"><article class="panel matrix-panel"><div class="panel-heading"><div><p class="eyebrow">CONFUSION MATRIX</p><h2>Classifier outcomes</h2></div></div><div class="matrix"><div></div><span>Predicted<br>legitimate</span><span>Predicted<br>fraud</span><b>Actual<br>legitimate</b><strong id="cm-tn">—</strong><strong id="cm-fp" class="matrix-warn">—</strong><b>Actual<br>fraud</b><strong id="cm-fn" class="matrix-warn">—</strong><strong id="cm-tp" class="matrix-good">—</strong></div><div class="cost-row"><div><span>False-positive count</span><strong id="eval-fp">—</strong></div><div><span>False-negative count</span><strong id="eval-fn">—</strong></div><div><span>FP cost / case</span><strong id="eval-cost">—</strong></div></div></article><article class="panel impact-panel"><div class="panel-heading"><div><p class="eyebrow">BUSINESS IMPACT</p><h2>Money protected</h2></div></div><div class="impact-stat"><span>Fraudulent refunds prevented</span><strong id="eval-prevented">—</strong></div><div class="impact-stat negative"><span>Legitimate value incorrectly held</span><strong id="eval-held">—</strong></div><div class="impact-net"><span>Net protected merchant value</span><strong id="eval-net">—</strong></div><small>Based on actual held-out test cases. FP cost assumption is configurable in evaluation output.</small></article></div><article class="panel threshold-panel"><div class="panel-heading"><div><p class="eyebrow">THRESHOLD ANALYSIS</p><h2>Trade-off before choosing a cutoff</h2></div><span class="method-note">CURRENT THRESHOLD · 0.50</span></div><div class="table-wrap"><table><thead><tr><th>THRESHOLD</th><th>PRECISION</th><th>RECALL</th><th>F1</th><th>FALSE POSITIVES</th><th>FALSE NEGATIVES</th></tr></thead><tbody id="threshold-table"></tbody></table></div></article><p class="split-note" id="split-note"></p></section>
+
+      <section id="page-audit" class="page"><div class="page-heading"><div><p class="eyebrow">ASSURANCE / IMMUTABLE RECORD</p><h1>Audit <em>logs.</em></h1><p class="subhead">A chronological record of every verification decision and failure.</p></div><span class="immutable-pill">◉ IMMUTABLE PROTOTYPE LOG</span></div><article class="panel audit-panel"><div class="panel-heading"><div><p class="eyebrow">EVENT STREAM</p><h2>Verification activity</h2></div><button class="btn btn-secondary" id="refresh-audit">↻ Refresh</button></div><div id="audit-list" class="audit-list"></div></article></section>
+    </main>
+  </div>
+  <div id="toast" class="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
