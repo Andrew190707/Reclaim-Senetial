@@ -1,298 +1,1212 @@
 const $ = (s) => document.querySelector(s);
-const $$ = (s) => [...document.querySelectorAll(s)];
-const money = (n) => "₹" + Number(n || 0).toLocaleString("en-IN");
-const date = (v) => new Date(v).toLocaleDateString("en-IN", {day:"2-digit", month:"short"});
-const decisionClass = (d) => d.includes("HOLD") ? "verdict-hold" : d.includes("ESCALATE") ? "verdict-escalate" : "verdict-approve";
-const decisionShort = (d) => d.includes("HOLD") ? "HOLD REFUND" : d.includes("ESCALATE") ? "HUMAN REVIEW" : "APPROVE";
-const riskClass = (n) => n >= .65 ? "risk-high" : n >= .35 ? "risk-mid" : "risk-low";
-let overviewData, casesData;
-let csrfToken = null;
 
-async function api(path, options = {}) {
-  const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
-  if (csrfToken) {
-    headers["X-CSRF-Token"] = csrfToken;
-  }
-  const response = await fetch(path, { ...options, headers });
-  if (response.status === 401) { showLogin(); throw new Error("Authentication required"); }
-  const body = await response.json();
-  if (!response.ok) throw new Error(body.error || "Request failed");
-  return body;
-}
-function showLogin(){ $("#login-screen").classList.remove("hidden"); $("#app-shell").classList.add("hidden"); }
-function showApp(){ $("#login-screen").classList.add("hidden"); $("#app-shell").classList.remove("hidden"); }
-function toast(message){ const el=$("#toast"); el.textContent=message; el.classList.add("show"); setTimeout(()=>el.classList.remove("show"),2800); }
-function caseRow(c, compact=false) {
-  return `<tr data-case="${c.return_id}"><td><div class="case-cell"><strong>${c.return_id}</strong><small>${c.customer_id}</small></div></td><td>${c.merchant_id}</td><td>${c.return_reason}</td><td class="amount">${money(c.refund_amount)}</td><td class="risk-cell ${riskClass(c.risk_score)}">${c.risk_percent}%</td><td><span class="verdict ${decisionClass(c.decision)}">${decisionShort(c.decision)}</span></td><td>${date(c.return_request_timestamp)}</td><td>→</td></tr>`;
-}
-function bindCaseRows(){ $$("tr[data-case]").forEach(row=>row.addEventListener("click",()=>openDetail(row.dataset.case))); }
-async function loadOverview(){
-  overviewData = await api("/api/overview");
-  $("#metric-cases").textContent = overviewData.total_cases.toLocaleString("en-IN");
-  $("#metric-value").textContent = money(overviewData.protected_value);
-  $("#metric-review").textContent = overviewData.pending_review.toLocaleString("en-IN");
-  $("#nav-case-count").textContent = (overviewData.total_cases/1000).toFixed(1)+"K";
-  const d=overviewData.decisions, total=overviewData.reviewed_cases;
-  const approve = d["APPROVE REFUND"] || 0;
-  const hold = d["HOLD REFUND"] || 0;
-  const escalate = d["ESCALATE TO HUMAN REVIEW"] || 0;
-  
-  $("#donut-total").textContent = total.toLocaleString("en-IN");
-  $("#legend-approve").textContent = approve.toLocaleString("en-IN");
-  $("#legend-hold").textContent = hold.toLocaleString("en-IN");
-  $("#legend-escalate").textContent = escalate.toLocaleString("en-IN");
-  
-  if (total > 0) {
-    const holdPct = (hold / total) * 100;
-    const escPct = holdPct + (escalate / total) * 100;
-    $(".donut").style.background = `conic-gradient(var(--coral) 0 ${holdPct}%, var(--yellow) ${holdPct}% ${escPct}%, var(--blue) ${escPct}% 100%)`;
-  } else {
-    $(".donut").style.background = `conic-gradient(#e5e9ef 0 100%)`;
-  }
-  
-  $("#recent-cases").innerHTML = overviewData.latest_cases.map(c=>caseRow(c,true)).join("");
-  bindCaseRows();
-}
-async function loadCases(){
-  const risk=$("#filter-risk").value, reason=$("#filter-reason").value;
-  const data=await api(`/api/cases?risk=${encodeURIComponent(risk)}&reason=${encodeURIComponent(reason)}`);
-  casesData=data.cases;
-  $("#case-count").textContent=`${data.count.toLocaleString("en-IN")} cases`;
-  if ($("#filter-reason").options.length===1) data.reasons.forEach(r=>$("#filter-reason").insertAdjacentHTML("beforeend",`<option>${r}</option>`));
-  renderCases(casesData);
-}
-function renderCases(list){
-  const search=($("#case-search").value||"").toLowerCase();
-  const filtered=list.filter(c=>[c.return_id,c.merchant_id,c.customer_id].some(v=>v.toLowerCase().includes(search)));
-  $("#cases-table").innerHTML=filtered.map(c=>caseRow(c)).join("") || `<tr><td colspan="8" class="empty-state">No cases match these filters.</td></tr>`;
-  bindCaseRows();
-}
-async function openDetail(id){
-  const data=await api(`/api/cases/${id}`);
-  const c=data.case, a=data.analysis;
-  navigate("detail");
-  $("#detail-eyebrow").textContent=`CASE DETAILS / ${c.return_id}`;
-  $("#detail-title").innerHTML=`${c.return_id} <em>verification.</em>`;
-  $("#detail-subhead").textContent=`${c.order_id} · ${c.merchant_id} · Requested ${date(c.return_request_timestamp)}`;
-  $("#detail-verdict").innerHTML=`<span class="verdict ${decisionClass(a.decision)}">${a.decision}</span>`;
-  const rules=a.triggered_rules.map(r=>`<div class="rule-row"><span class="rule-id">${r.rule_id}</span><span class="rule-result ${r.result}">${r.result}</span><span class="rule-evidence">${r.evidence}</span></div>`).join("");
-  const evidence=a.evidence_summary.map(e=>`<li>${e}</li>`).join("");
-  const timeline=a.audit_trail.map(x=>`<div class="timeline-item"><strong>${x.event_type.replaceAll("_"," ")}</strong><small>${new Date(x.created_at).toLocaleString("en-IN")}</small><span>${x.detail}</span></div>`).join("");
-  $("#detail-content").innerHTML=`<div class="detail-grid"><div class="detail-main"><article class="panel"><div class="case-identity"><div><div class="case-big">${c.return_id}</div><small>${c.customer_id} · ${c.product_id}</small></div><div class="identity-badge"><span>REFUND VALUE</span><strong>${money(c.refund_amount)}</strong></div></div><div class="detail-facts"><div><span>RETURN REASON</span><strong>${c.return_reason}</strong></div><div><span>ORIGINAL SKU</span><strong>${c.original_sku}</strong></div><div><span>RETURNED SKU</span><strong>${c.returned_sku}</strong></div><div><span>WAREHOUSE</span><strong>${c.warehouse_scan_result.replaceAll("_"," ")}</strong></div></div></article><article class="panel"><h3 class="section-title">Deterministic evidence checks</h3>${rules}</article><article class="panel"><h3 class="section-title">Investigator summary</h3><div class="recommend"><strong>${a.investigator.summary}</strong>${a.investigator.why}</div><ul class="evidence-list">${evidence}</ul><div class="recommend"><strong>Recommended human-review questions</strong>${a.investigator.review_questions.join("<br>")}</div></article></div><div class="detail-side"><article class="panel"><div class="risk-card"><div class="risk-ring" style="--risk:${a.risk_percent}%"><span>${a.risk_percent}%</span></div><div class="risk-copy"><strong>${a.decision}</strong><small>${a.decision_reason}</small></div></div><div class="score-bars"><div class="score-bar"><span>ML model</span><div class="bar-track"><i class="model" style="width:${(a.model_score||0)*100}%"></i></div><b>${a.model_score===null?"—":Math.round(a.model_score*100)+"%"}</b></div><div class="score-bar"><span>Rule evidence</span><div class="bar-track"><i style="width:${a.rule_score*100}%"></i></div><b>${Math.round(a.rule_score*100)}%</b></div><div class="score-bar"><span>Graph signal</span><div class="bar-track"><i class="pattern" style="width:${a.pattern_score*100}%"></i></div><b>${Math.round(a.pattern_score*100)}%</b></div></div></article><article class="panel"><h3 class="section-title">Coordinated-return context</h3><div class="recommend"><strong>${a.pattern.pattern_id}</strong>${a.pattern.supporting_evidence}<br><br><small>Connected: ${a.pattern.connected_entities.join(" · ")}</small></div></article><article class="panel"><h3 class="section-title">Audit trail</h3><div class="timeline">${timeline}</div></article></div></div>`;
-}
-async function loadPatterns(){ const d=await api("/api/patterns"); $("#graph-nodes").textContent=d.graph_nodes.toLocaleString("en-IN"); $("#linked-cases").textContent=d.linked_cases.toLocaleString("en-IN"); $("#active-clusters").textContent=d.patterns.length.toString().padStart(2,"0"); $("#patterns-list").innerHTML=d.patterns.map(p=>`<div class="pattern-row"><strong>${p.pattern_id}</strong><p>${p.supporting_evidence}<br><small>${p.connected_entities.join(" · ")}</small></p><span class="confidence">${Math.round(p.confidence*100)}% <small>confidence</small></span><button class="text-link" data-open-case="${p.case_id}">Inspect →</button></div>`).join("") || `<p class="subhead">No coordinated patterns met the evidence threshold.</p>`; $$("[data-open-case]").forEach(b=>b.onclick=()=>openDetail(b.dataset.openCase)); }
-async function loadSpikes(){ const d=await api("/api/spikes"); $("#spikes-table").innerHTML=d.spikes.map(s=>`<tr><td><strong>${s.affected_merchant}</strong></td><td>${s.time_window}</td><td>${s.baseline}%</td><td>${s.current_rate}%</td><td class="spike-deviation">${s.deviation}σ</td><td><span class="severity ${s.severity==="high"?"high":"medium"}">${s.severity.toUpperCase()}</span></td><td><button class="text-link" data-open-case="${s.case_id}">Inspect →</button></td></tr>`).join(""); $$("[data-open-case]").forEach(b=>b.onclick=()=>openDetail(b.dataset.openCase)); }
-async function loadEvaluation(){ const d=await api("/api/evaluation"); $("#eval-precision").textContent=(d.precision*100).toFixed(1)+"%"; $("#eval-recall").textContent=(d.recall*100).toFixed(1)+"%"; $("#eval-f1").textContent=(d.f1*100).toFixed(1)+"%"; $("#eval-prauc").textContent=d.pr_auc.toFixed(3); const m=d.confusion_matrix; $("#cm-tn").textContent=m[0][0].toLocaleString(); $("#cm-fp").textContent=m[0][1].toLocaleString(); $("#cm-fn").textContent=m[1][0].toLocaleString(); $("#cm-tp").textContent=m[1][1].toLocaleString(); $("#eval-fp").textContent=d.false_positives.toLocaleString(); $("#eval-fn").textContent=d.false_negatives.toLocaleString(); $("#eval-cost").textContent=money(d.false_positive_cost_per_case); $("#eval-prevented").textContent=money(d.fraudulent_refunds_prevented); $("#eval-held").textContent=money(d.legitimate_value_held); $("#eval-net").textContent=money(d.fraudulent_refunds_prevented-d.legitimate_value_held); $("#split-note").textContent=`${d.split} Dataset: ${d.dataset_size.toLocaleString()} cases · train ${d.train_size.toLocaleString()} · validation ${d.validation_size.toLocaleString()} · test ${d.test_size.toLocaleString()} · ROC-AUC ${d.roc_auc}`; $("#threshold-table").innerHTML=d.thresholds.map(x=>`<tr class="${x.threshold===.5?"current":""}"><td><strong>${x.threshold.toFixed(2)}</strong></td><td>${(x.precision*100).toFixed(1)}%</td><td>${(x.recall*100).toFixed(1)}%</td><td>${(x.f1*100).toFixed(1)}%</td><td>${x.false_positives}</td><td>${x.false_negatives}</td></tr>`).join(""); }
-async function loadAudit(){ const d=await api("/api/audit"); $("#audit-list").innerHTML=d.events.map(x=>`<div class="audit-item"><strong>${x.event_type.replaceAll("_"," ").toUpperCase()}</strong><span class="audit-case">${x.return_id}</span><span>${x.detail}</span><time>${new Date(x.created_at).toLocaleString("en-IN")}</time></div>`).join("") || `<p class="subhead">No case has been opened yet. Open a case to create its immutable verification trail.</p>`; }
-function navigate(page){ $$(".page").forEach(p=>p.classList.remove("active-page")); $(`#page-${page}`).classList.add("active-page"); $$(".nav-item").forEach(n=>n.classList.toggle("active",n.dataset.page===page)); $("#crumb-current").textContent=page.replaceAll("-"," ").toUpperCase(); window.scrollTo(0,0); if(page==="cases")loadCases(); if(page==="patterns")loadPatterns(); if(page==="spikes")loadSpikes(); if(page==="evaluation")loadEvaluation(); if(page==="audit")loadAudit(); }
-async function boot(){ const s=await fetch("/api/session").then(r=>r.json()); if(!s.authenticated){csrfToken=null;showLogin();return} if(s.csrf_token)csrfToken=s.csrf_token; showApp(); await loadOverview(); }
-$("#login-form").addEventListener("submit",async e=>{e.preventDefault(); const form=new FormData(e.target); try{const res=await api("/api/login",{method:"POST",body:JSON.stringify(Object.fromEntries(form))}); if(res.csrf_token)csrfToken=res.csrf_token; showApp(); await loadOverview();}catch(err){$("#login-error").textContent=err.message}});
-$("#logout-btn").onclick=async()=>{try{await api("/api/logout",{method:"POST"});}catch(e){} csrfToken=null; showLogin();};
-$$(".nav-item").forEach(b=>b.onclick=()=>navigate(b.dataset.page));
-$$("[data-page-jump]").forEach(b=>b.onclick=()=>navigate(b.dataset.pageJump));
-$("#filter-risk").onchange=loadCases; $("#filter-reason").onchange=loadCases; $("#case-search").oninput=()=>renderCases(casesData||[]);
-$("#refresh-audit").onclick=loadAudit;
-
-function openVerifyModal(){
-  const modal=$("#verify-modal-backdrop");
-  if(modal) modal.classList.remove("hidden");
-  const err=$("#verify-error");
-  if(err){ err.classList.add("hidden"); err.textContent=""; }
-}
-function closeVerifyModal(){
-  const modal=$("#verify-modal-backdrop");
-  if(modal) modal.classList.add("hidden");
-}
-
-const DEMO_SCENARIOS = {
-
-  legitimate: {
-    order_id: "ORD-DEMO-CLEAN-001",
-    merchant_id: "M-003",
-    customer_id: "C-DEMO-CLEAN-001",
-
-    original_sku: "P-0042-A",
-    returned_sku: "P-0042-A",
-    refund_amount: 1499,
-
-    original_package_weight: 0.850,
-    returned_package_weight: 0.840,
-
-    serial_number_match: "match",
-    product_condition: "sealed",
-
-    warehouse_scan_result: "verified",
-    return_reason: "changed mind",
-
-    courier_status: "received",
-    customer_return_count: 0,
-    previous_similar_claims: 0,
-
-    device_id: "DV-DEMO-CLEAN-001",
-    shipping_address_hash: "SA-DEMO-CLEAN-001",
-    payment_instrument_hash: "PI-DEMO-CLEAN-001"
-  },
-
-  sku_mismatch: {
-    order_id: "ORD-912044",
-    merchant_id: "M-008",
-    customer_id: "C-0912",
-
-    original_sku: "P-0112-A",
-    returned_sku: "P-0489-B",
-    refund_amount: 38999,
-
-    original_package_weight: 3.500,
-    returned_package_weight: 0.820,
-
-    serial_number_match: "mismatch",
-    product_condition: "partial",
-
-    warehouse_scan_result: "manual_review",
-    return_reason: "damaged in transit",
-
-    courier_status: "received",
-    customer_return_count: 5,
-    previous_similar_claims: 3,
-
-    device_id: "DV-DEMO-SKU-001",
-    shipping_address_hash: "SA-DEMO-SKU-001",
-    payment_instrument_hash: "PI-DEMO-SKU-001"
-  },
-
-  suspicious_history: {
-    order_id: "ORD-671092",
-    merchant_id: "M-014",
-    customer_id: "C-0012",
-
-    original_sku: "P-0095-A",
-    returned_sku: "P-0095-A",
-    refund_amount: 45000,
-
-    original_package_weight: 1.200,
-    returned_package_weight: 1.180,
-
-    serial_number_match: "match",
-    product_condition: "opened",
-
-    warehouse_scan_result: "manual_review",
-    return_reason: "missing parts",
-
-    courier_status: "received",
-    customer_return_count: 9,
-    previous_similar_claims: 5,
-
-    device_id: "DV-DEMO-HISTORY-001",
-    shipping_address_hash: "SA-DEMO-HISTORY-001",
-    payment_instrument_hash: "PI-DEMO-HISTORY-001"
-  },
-
-  coordinated_abuse: {
-    order_id: "ORD-512099",
-    merchant_id: "M-001",
-    customer_id: "C-0005",
-
-    original_sku: "P-0010-A",
-    returned_sku: "P-0010-A",
-    refund_amount: 29999,
-
-    original_package_weight: 1.500,
-    returned_package_weight: 1.480,
-
-    serial_number_match: "match",
-    product_condition: "opened",
-
-    warehouse_scan_result: "manual_review",
-    return_reason: "not as described",
-
-    courier_status: "received",
-    customer_return_count: 6,
-    previous_similar_claims: 4,
-
-    // Keep this shared identifier intentional for the coordination demo.
-    device_id: "DV-00010",
-    shipping_address_hash: "SA-DEMO-COORD-001",
-    payment_instrument_hash: "PI-DEMO-COORD-001"
-  },
-
-  dependency_failure: {
-    order_id: "ORD-301928",
-    merchant_id: "M-021",
-    customer_id: "C-1102",
-
-    original_sku: "P-0310-A",
-    returned_sku: "P-0310-A",
-    refund_amount: 18500,
-
-    original_package_weight: 2.000,
-    returned_package_weight: 1.990,
-
-    serial_number_match: "match",
-    product_condition: "opened",
-
-    warehouse_scan_result: "unverified",
-    return_reason: "changed mind",
-
-    courier_status: "received_before_pickup_scan",
-    customer_return_count: 1,
-    previous_similar_claims: 0,
-
-    device_id: "DV-DEMO-FAIL-001",
-    shipping_address_hash: "SA-DEMO-FAIL-001",
-    payment_instrument_hash: "PI-DEMO-FAIL-001"
-  }
-
+const state = {
+  cases: [],
+  selectedCase: null,
+  csrf: null,
 };
 
-$("#demo-scenario-select").onchange = (e) => {
-  const val = e.target.value;
-
-  if (!val || !DEMO_SCENARIOS[val]) return;
-
-  const data = DEMO_SCENARIOS[val];
-  const form = $("#verify-return-form");
-
-  // Clear all scenario-controlled fields first.
-  Object.keys(data).forEach((key) => {
-    if (form.elements[key]) {
-      form.elements[key].value = "";
-    }
-  });
-
-  // Load the selected scenario.
-  Object.entries(data).forEach(([key, value]) => {
-    if (form.elements[key]) {
-      form.elements[key].value = value;
-    }
-  });
-
-  toast(`Loaded Scenario: ${val.toUpperCase()}`);
+const decisionClass = (d) => {
+  if (!d) return "";
+  if (d.includes("APPROVE")) return "approve";
+  if (d.includes("HOLD")) return "hold";
+  if (d.includes("ESCALATE")) return "escalate";
+  if (d.includes("DENY")) return "deny";
+  return "";
 };
 
-$("#new-case-btn").onclick=openVerifyModal;
-$("#close-verify-modal").onclick=closeVerifyModal;
-$("#cancel-verify-btn").onclick=closeVerifyModal;
+const decisionShort = (d) => {
+  if (!d) return "UNKNOWN";
+  if (d === "APPROVE REFUND") return "APPROVE";
+  if (d === "HOLD REFUND") return "HOLD";
+  if (d === "ESCALATE TO HUMAN REVIEW") return "REVIEW";
+  if (d === "DENY REFUND") return "DENY";
+  return d;
+};
 
-$("#verify-return-form").onsubmit=async(e)=>{
-  e.preventDefault();
-  const form=e.target;
-  const errDiv=$("#verify-error");
-  errDiv.classList.add("hidden");
-  errDiv.textContent="";
-  const payload=Object.fromEntries(new FormData(form));
-  try{
-    const res=await api("/api/verify",{
-      method:"POST",
-      body:JSON.stringify(payload)
+const escapeHtml = (value) =>
+  String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+
+const fmtPercent = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "0%";
+  return `${Math.round(n * 100)}%`;
+};
+
+const fmtMoney = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "₹0";
+  return `₹${n.toLocaleString("en-IN")}`;
+};
+
+const fmtDate = (value) => {
+  if (!value) return "Unknown";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return value;
+  return d.toLocaleString("en-IN");
+};
+
+async function api(url, options = {}) {
+  const opts = {
+    credentials: "same-origin",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...(options.headers || {}),
+    },
+  };
+
+  if (state.csrf) {
+    opts.headers["X-CSRF-Token"] = state.csrf;
+  }
+
+  const response = await fetch(url, opts);
+
+  let data = {};
+  try {
+    data = await response.json();
+  } catch (_) {}
+
+  if (!response.ok) {
+    throw new Error(data.error || data.message || `Request failed (${response.status})`);
+  }
+
+  return data;
+}
+
+function showToast(message, type = "info") {
+  let toast = document.querySelector("#toast");
+
+  if (!toast) {
+    toast = document.createElement("div");
+    toast.id = "toast";
+    document.body.appendChild(toast);
+  }
+
+  toast.className = `toast ${type}`;
+  toast.textContent = message;
+
+  requestAnimationFrame(() => {
+    toast.classList.add("show");
+  });
+
+  setTimeout(() => {
+    toast.classList.remove("show");
+  }, 3000);
+}
+
+async function loadSession() {
+  try {
+    const data = await api("/api/session");
+    state.csrf = data.csrf || data.csrf_token || null;
+  } catch (_) {
+    // Session endpoint may not exist in older builds.
+  }
+}
+
+async function loadCases() {
+  const data = await api("/api/cases");
+
+  state.cases = Array.isArray(data)
+    ? data
+    : data.cases || data.items || [];
+
+  renderCases();
+}
+
+function renderCases() {
+  const container =
+    $("#case-list") ||
+    $("#cases-list") ||
+    $("#cases");
+
+  if (!container) return;
+
+  if (!state.cases.length) {
+    container.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-title">No cases found</div>
+        <div class="empty-subtitle">
+          Verified return cases will appear here.
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = state.cases
+    .map((c) => {
+      const automatedDecision =
+        c.decision ||
+        c.automated_decision ||
+        "UNKNOWN";
+
+      const finalDecision =
+        c.final_decision ||
+        "";
+
+      return `
+        <button
+          class="case-row"
+          type="button"
+          onclick="openDetail('${escapeHtml(c.return_id)}')"
+        >
+          <div class="case-main">
+            <div class="case-id">
+              ${escapeHtml(c.return_id)}
+            </div>
+
+            <div class="case-meta">
+              ${escapeHtml(c.merchant_id || "Unknown merchant")}
+              · ${fmtMoney(c.refund_amount)}
+            </div>
+          </div>
+
+          <div class="case-risk">
+            ${fmtPercent(c.risk_score)}
+          </div>
+
+          <div class="case-decision ${decisionClass(
+            finalDecision || automatedDecision
+          )}">
+            ${escapeHtml(
+              decisionShort(finalDecision || automatedDecision)
+            )}
+          </div>
+        </button>
+      `;
+    })
+    .join("");
+}
+
+function ensureHumanReviewStyles() {
+  if (document.querySelector("#human-review-styles")) return;
+
+  const style = document.createElement("style");
+  style.id = "human-review-styles";
+
+  style.textContent = `
+    .human-review-panel {
+      margin: 18px 0 22px;
+      padding: 22px;
+      border: 1px solid rgba(255,255,255,.09);
+      border-radius: 18px;
+      background:
+        linear-gradient(
+          135deg,
+          rgba(255,255,255,.055),
+          rgba(255,255,255,.025)
+        );
+    }
+
+    .human-review-header {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      align-items: flex-start;
+      margin-bottom: 18px;
+    }
+
+    .human-review-eyebrow {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+      opacity: .62;
+      margin-bottom: 7px;
+    }
+
+    .human-review-title {
+      font-size: 18px;
+      font-weight: 750;
+      margin-bottom: 5px;
+    }
+
+    .human-review-subtitle {
+      font-size: 13px;
+      line-height: 1.55;
+      opacity: .65;
+      max-width: 680px;
+    }
+
+    .human-review-badge {
+      padding: 7px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      white-space: nowrap;
+      background: rgba(255,255,255,.07);
+    }
+
+    .human-review-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .human-review-stat {
+      padding: 13px 14px;
+      border-radius: 13px;
+      background: rgba(0,0,0,.16);
+      border: 1px solid rgba(255,255,255,.06);
+    }
+
+    .human-review-stat-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      opacity: .52;
+      margin-bottom: 5px;
+    }
+
+    .human-review-stat-value {
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .human-review-options {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px;
+      margin-bottom: 15px;
+    }
+
+    .human-decision-btn {
+      border: 1px solid rgba(255,255,255,.10);
+      border-radius: 14px;
+      padding: 15px 16px;
+      cursor: pointer;
+      background: rgba(255,255,255,.035);
+      color: inherit;
+      text-align: left;
+      transition:
+        transform .15s ease,
+        border-color .15s ease,
+        background .15s ease;
+    }
+
+    .human-decision-btn:hover {
+      transform: translateY(-1px);
+      background: rgba(255,255,255,.065);
+    }
+
+    .human-decision-btn.selected {
+      border-color: rgba(255,255,255,.34);
+      background: rgba(255,255,255,.10);
+    }
+
+    .human-decision-btn.approve.selected {
+      border-color: rgba(80,220,145,.65);
+    }
+
+    .human-decision-btn.deny.selected {
+      border-color: rgba(255,100,100,.65);
+    }
+
+    .human-decision-label {
+      font-size: 13px;
+      font-weight: 800;
+      margin-bottom: 4px;
+    }
+
+    .human-decision-description {
+      font-size: 11px;
+      line-height: 1.45;
+      opacity: .58;
+    }
+
+    .human-review-rationale {
+      width: 100%;
+      min-height: 92px;
+      resize: vertical;
+      box-sizing: border-box;
+      border-radius: 12px;
+      border: 1px solid rgba(255,255,255,.10);
+      background: rgba(0,0,0,.18);
+      color: inherit;
+      padding: 13px;
+      outline: none;
+      font: inherit;
+      font-size: 13px;
+    }
+
+    .human-review-rationale:focus {
+      border-color: rgba(255,255,255,.28);
+    }
+
+    .human-review-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 14px;
+      margin-top: 12px;
+    }
+
+    .human-review-note {
+      font-size: 11px;
+      opacity: .5;
+      line-height: 1.45;
+    }
+
+    .finalize-human-decision {
+      border: 0;
+      border-radius: 11px;
+      padding: 11px 17px;
+      font-weight: 800;
+      cursor: pointer;
+      color: white;
+      background: #ffffff;
+      color: #111;
+      transition: opacity .15s ease, transform .15s ease;
+    }
+
+    .finalize-human-decision:hover:not(:disabled) {
+      transform: translateY(-1px);
+    }
+
+    .finalize-human-decision:disabled {
+      opacity: .35;
+      cursor: not-allowed;
+    }
+
+    .human-finalized {
+      border-color: rgba(80,220,145,.22);
+      background: rgba(80,220,145,.045);
+    }
+
+    .human-finalized-decision {
+      font-size: 22px;
+      font-weight: 850;
+      margin: 8px 0;
+    }
+
+    .human-finalized-meta {
+      font-size: 12px;
+      line-height: 1.6;
+      opacity: .65;
+    }
+
+    .human-finalized-reason {
+      margin-top: 14px;
+      padding: 12px 14px;
+      border-radius: 11px;
+      background: rgba(0,0,0,.15);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    @media (max-width: 700px) {
+      .human-review-grid,
+      .human-review-options {
+        grid-template-columns: 1fr;
+      }
+
+      .human-review-header,
+      .human-review-footer {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .finalize-human-decision {
+        width: 100%;
+      }
+    }
+  `;
+
+  document.head.appendChild(style);
+}
+
+function humanReviewMarkup(c, a) {
+  const humanDecision =
+    a.human_decision ||
+    c.human_decision ||
+    null;
+
+  const automatedDecision =
+    a.decision ||
+    c.decision ||
+    "UNKNOWN";
+
+  /*
+   * If a human has already finalized the case,
+   * show the recorded final resolution instead
+   * of showing the decision buttons again.
+   */
+  if (humanDecision) {
+    return `
+      <section class="human-review-panel human-finalized">
+        <div class="human-review-header">
+          <div>
+            <div class="human-review-eyebrow">
+              Final Resolution
+            </div>
+
+            <div class="human-review-title">
+              Human decision recorded
+            </div>
+
+            <div class="human-review-subtitle">
+              Reclaim Sentinel routed this case for human review.
+              The financial outcome below was finalized by the reviewer.
+            </div>
+          </div>
+
+          <div class="human-review-badge">
+            FINALIZED
+          </div>
+        </div>
+
+        <div class="human-finalized-decision">
+          ${escapeHtml(humanDecision.final_decision)}
+        </div>
+
+        <div class="human-finalized-meta">
+          Reviewer:
+          <strong>${escapeHtml(humanDecision.reviewer)}</strong>
+          <br>
+          Finalized:
+          <strong>${escapeHtml(fmtDate(humanDecision.created_at))}</strong>
+          <br>
+          Automated verdict:
+          <strong>${escapeHtml(humanDecision.automated_decision)}</strong>
+          <br>
+          Automated risk:
+          <strong>${fmtPercent(humanDecision.automated_risk_score)}</strong>
+        </div>
+
+        <div class="human-finalized-reason">
+          <strong>Reviewer rationale</strong><br>
+          ${escapeHtml(humanDecision.reason)}
+        </div>
+      </section>
+    `;
+  }
+
+  /*
+   * Only HOLD and ESCALATE require the human
+   * to make the final financial decision.
+   */
+  if (
+    automatedDecision !== "HOLD REFUND" &&
+    automatedDecision !== "ESCALATE TO HUMAN REVIEW"
+  ) {
+    return "";
+  }
+
+  return `
+    <section class="human-review-panel">
+      <div class="human-review-header">
+        <div>
+          <div class="human-review-eyebrow">
+            Human Review Required
+          </div>
+
+          <div class="human-review-title">
+            Make the final refund decision
+          </div>
+
+          <div class="human-review-subtitle">
+            Reclaim Sentinel has routed this case to human review.
+            Review the automated evidence, then decide whether the
+            refund should ultimately be approved or denied.
+          </div>
+        </div>
+
+        <div class="human-review-badge">
+          ${escapeHtml(decisionShort(automatedDecision))}
+        </div>
+      </div>
+
+      <div class="human-review-grid">
+        <div class="human-review-stat">
+          <div class="human-review-stat-label">
+            Automated verdict
+          </div>
+
+          <div class="human-review-stat-value">
+            ${escapeHtml(automatedDecision)}
+          </div>
+        </div>
+
+        <div class="human-review-stat">
+          <div class="human-review-stat-label">
+            Automated risk
+          </div>
+
+          <div class="human-review-stat-value">
+            ${fmtPercent(
+              a.risk_score ??
+              c.risk_score ??
+              0
+            )}
+          </div>
+        </div>
+
+        <div class="human-review-stat">
+          <div class="human-review-stat-label">
+            Refund value
+          </div>
+
+          <div class="human-review-stat-value">
+            ${fmtMoney(
+              a.refund_amount ??
+              c.refund_amount ??
+              0
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div class="human-review-options">
+        <button
+          type="button"
+          class="human-decision-btn approve"
+          data-human-decision="APPROVE REFUND"
+        >
+          <div class="human-decision-label">
+            APPROVE REFUND
+          </div>
+
+          <div class="human-decision-description">
+            Release the refund and close the case.
+          </div>
+        </button>
+
+        <button
+          type="button"
+          class="human-decision-btn deny"
+          data-human-decision="DENY REFUND"
+        >
+          <div class="human-decision-label">
+            DENY REFUND
+          </div>
+
+          <div class="human-decision-description">
+            Reject the refund based on the reviewed evidence.
+          </div>
+        </button>
+      </div>
+
+      <textarea
+        class="human-review-rationale"
+        id="human-review-rationale"
+        placeholder="Enter reviewer rationale. Explain why the final refund decision was made..."
+      ></textarea>
+
+      <div class="human-review-footer">
+        <div class="human-review-note">
+          A reviewer rationale is required and will be written
+          to the case audit trail.
+        </div>
+
+        <button
+          type="button"
+          class="finalize-human-decision"
+          id="finalize-human-decision"
+          disabled
+        >
+          FINALIZE DECISION
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+async function finalizeHumanDecision(returnId, decision) {
+  const rationale =
+    $("#human-review-rationale")?.value.trim() || "";
+
+  if (rationale.length < 5) {
+    showToast(
+      "Please provide a reviewer rationale.",
+      "error"
+    );
+    return;
+  }
+
+  if (rationale.length > 500) {
+    showToast(
+      "Reviewer rationale must be 500 characters or less.",
+      "error"
+    );
+    return;
+  }
+
+  const button = $("#finalize-human-decision");
+
+  if (button) {
+    button.disabled = true;
+    button.textContent = "FINALIZING...";
+  }
+
+  try {
+    await api(
+      `/api/cases/${encodeURIComponent(returnId)}/human-decision`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          decision,
+          reason: rationale,
+        }),
+      }
+    );
+
+    showToast(
+      `Case finalized: ${decision}`,
+      "success"
+    );
+
+    await loadCases();
+    await openDetail(returnId);
+  } catch (error) {
+    if (button) {
+      button.disabled = false;
+      button.textContent = "FINALIZE DECISION";
+    }
+
+    showToast(
+      error.message || "Unable to finalize decision.",
+      "error"
+    );
+  }
+}
+
+async function openDetail(returnId) {
+  ensureHumanReviewStyles();
+
+  const container = $("#detail-content");
+
+  if (!container) return;
+
+  container.innerHTML = `
+    <div class="loading-state">
+      Loading case...
+    </div>
+  `;
+
+  try {
+    const response = await api(
+      `/api/cases/${encodeURIComponent(returnId)}`
+    );
+
+    const c =
+      response.case ||
+      response;
+
+    const a =
+      response.analysis ||
+      response;
+
+    state.selectedCase = c;
+
+    const automatedDecision =
+      a.decision ||
+      c.decision ||
+      "UNKNOWN";
+
+    const finalDecision =
+      a.final_decision ||
+      c.final_decision ||
+      "";
+
+    const humanDecision =
+      a.human_decision ||
+      c.human_decision ||
+      null;
+
+    const riskScore =
+      a.risk_score ??
+      c.risk_score ??
+      0;
+
+    const modelScore =
+      a.model_score ??
+      c.model_score ??
+      0;
+
+    const rulesScore =
+      a.rules_score ??
+      c.rules_score ??
+      0;
+
+    const graphScore =
+      a.graph_score ??
+      c.graph_score ??
+      0;
+
+    const evidence =
+      a.evidence ||
+      c.evidence ||
+      [];
+
+    const failures =
+      a.failures ||
+      c.failures ||
+      [];
+
+    const flags =
+      a.flags ||
+      c.flags ||
+      [];
+
+    const graph =
+      a.graph ||
+      c.graph ||
+      {};
+
+    const audit =
+      response.audit ||
+      a.audit ||
+      c.audit ||
+      [];
+
+    const humanMarkup =
+      humanReviewMarkup(c, {
+        ...a,
+        human_decision: humanDecision,
+        final_decision: finalDecision,
+        decision: automatedDecision,
+      });
+
+    container.innerHTML = `
+      ${humanMarkup}
+
+      <div class="detail-grid">
+
+        <section class="detail-card verdict-card">
+          <div class="detail-label">
+            AUTOMATED VERDICT
+          </div>
+
+          <div class="verdict-value ${decisionClass(
+            automatedDecision
+          )}">
+            ${escapeHtml(automatedDecision)}
+          </div>
+
+          ${
+            finalDecision
+              ? `
+                <div class="detail-label" style="margin-top:14px;">
+                  FINAL OUTCOME
+                </div>
+
+                <div class="verdict-value ${decisionClass(
+                  finalDecision
+                )}">
+                  ${escapeHtml(finalDecision)}
+                </div>
+              `
+              : ""
+          }
+        </section>
+
+        <section class="detail-card">
+          <div class="detail-label">
+            REFUND AMOUNT
+          </div>
+
+          <div class="detail-big">
+            ${fmtMoney(c.refund_amount)}
+          </div>
+
+          <div class="detail-label" style="margin-top:12px;">
+            RETURN ID
+          </div>
+
+          <div class="detail-value">
+            ${escapeHtml(c.return_id)}
+          </div>
+        </section>
+
+        <section class="detail-card">
+          <div class="detail-label">
+            RISK SCORE
+          </div>
+
+          <div class="detail-big">
+            ${fmtPercent(riskScore)}
+          </div>
+
+          <div class="risk-breakdown">
+            <div>
+              <span>ML</span>
+              <strong>${fmtPercent(modelScore)}</strong>
+            </div>
+
+            <div>
+              <span>Rules</span>
+              <strong>${fmtPercent(rulesScore)}</strong>
+            </div>
+
+            <div>
+              <span>Graph</span>
+              <strong>${fmtPercent(graphScore)}</strong>
+            </div>
+          </div>
+        </section>
+
+        <section class="detail-card">
+          <div class="detail-label">
+            MERCHANT
+          </div>
+
+          <div class="detail-big">
+            ${escapeHtml(c.merchant_id || "Unknown")}
+          </div>
+
+          <div class="detail-label" style="margin-top:12px;">
+            CUSTOMER
+          </div>
+
+          <div class="detail-value">
+            ${escapeHtml(c.customer_id || "Unknown")}
+          </div>
+        </section>
+
+      </div>
+
+      <section class="detail-card evidence-section">
+        <div class="section-heading">
+          <div>
+            <div class="detail-label">
+              DETERMINISTIC EVIDENCE CHECKS
+            </div>
+
+            <div class="section-title">
+              Return integrity signals
+            </div>
+          </div>
+        </div>
+
+        <div class="evidence-list">
+          ${
+            Array.isArray(evidence) && evidence.length
+              ? evidence
+                  .map((item) => {
+                    const status =
+                      item.status ||
+                      item.result ||
+                      "UNKNOWN";
+
+                    return `
+                      <div class="evidence-row">
+                        <div>
+                          <div class="evidence-name">
+                            ${escapeHtml(
+                              item.rule ||
+                              item.name ||
+                              item.code ||
+                              "Evidence check"
+                            )}
+                          </div>
+
+                          <div class="evidence-description">
+                            ${escapeHtml(
+                              item.description ||
+                              item.message ||
+                              ""
+                            )}
+                          </div>
+                        </div>
+
+                        <div class="evidence-status">
+                          ${escapeHtml(status)}
+                        </div>
+                      </div>
+                    `;
+                  })
+                  .join("")
+              : `
+                <div class="empty-state">
+                  No evidence details available.
+                </div>
+              `
+          }
+        </div>
+      </section>
+
+      <section class="detail-card">
+        <div class="section-heading">
+          <div>
+            <div class="detail-label">
+              INVESTIGATOR SUMMARY
+            </div>
+
+            <div class="section-title">
+              Why Sentinel reached this verdict
+            </div>
+          </div>
+        </div>
+
+        <div class="summary-copy">
+          ${escapeHtml(
+            a.investigator_summary ||
+            c.investigator_summary ||
+            "No investigator summary available."
+          )}
+        </div>
+      </section>
+
+      <section class="detail-card">
+        <div class="section-heading">
+          <div>
+            <div class="detail-label">
+              FAILURE SIGNALS
+            </div>
+
+            <div class="section-title">
+              Evidence requiring attention
+            </div>
+          </div>
+        </div>
+
+        <div class="signal-list">
+          ${
+            Array.isArray(failures) && failures.length
+              ? failures
+                  .map(
+                    (item) => `
+                      <div class="signal-row failure">
+                        ${escapeHtml(
+                          typeof item === "string"
+                            ? item
+                            : item.message ||
+                              item.rule ||
+                              JSON.stringify(item)
+                        )}
+                      </div>
+                    `
+                  )
+                  .join("")
+              : `
+                <div class="signal-row">
+                  No hard failures detected.
+                </div>
+              `
+          }
+
+          ${
+            Array.isArray(flags) && flags.length
+              ? flags
+                  .map(
+                    (item) => `
+                      <div class="signal-row flag">
+                        ${escapeHtml(
+                          typeof item === "string"
+                            ? item
+                            : item.message ||
+                              item.rule ||
+                              JSON.stringify(item)
+                        )}
+                      </div>
+                    `
+                  )
+                  .join("")
+              : ""
+          }
+        </div>
+      </section>
+
+      <section class="detail-card">
+        <div class="section-heading">
+          <div>
+            <div class="detail-label">
+              COORDINATED-RETURN CONTEXT
+            </div>
+
+            <div class="section-title">
+              Linked activity
+            </div>
+          </div>
+        </div>
+
+        <div class="coordination-copy">
+          ${
+            graph.summary ||
+            graph.message ||
+            a.coordination_summary ||
+            "No coordinated-return pattern detected."
+          }
+        </div>
+
+        ${
+          graph.linked_cases?.length
+            ? `
+              <div class="linked-case-list">
+                ${graph.linked_cases
+                  .map(
+                    (id) => `
+                      <div class="linked-case">
+                        ${escapeHtml(id)}
+                      </div>
+                    `
+                  )
+                  .join("")}
+              </div>
+            `
+            : ""
+        }
+      </section>
+
+      <section class="detail-card audit-section">
+        <div class="section-heading">
+          <div>
+            <div class="detail-label">
+              AUDIT TRAIL
+            </div>
+
+            <div class="section-title">
+              Decision lineage
+            </div>
+          </div>
+        </div>
+
+        <div class="audit-list">
+          ${
+            Array.isArray(audit) && audit.length
+              ? audit
+                  .map(
+                    (event) => `
+                      <div class="audit-row">
+                        <div class="audit-dot"></div>
+
+                        <div class="audit-content">
+                          <div class="audit-event">
+                            ${escapeHtml(
+                              event.event ||
+                              event.type ||
+                              "event"
+                            )}
+                          </div>
+
+                          <div class="audit-time">
+                            ${escapeHtml(
+                              fmtDate(
+                                event.created_at ||
+                                event.timestamp
+                              )
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    `
+                  )
+                  .join("")
+              : `
+                <div class="empty-state">
+                  No audit events available.
+                </div>
+              `
+          }
+        </div>
+      </section>
+    `;
+
+    /*
+     * Human decision interaction
+     */
+    const decisionButtons =
+      container.querySelectorAll(
+        "[data-human-decision]"
+      );
+
+    const finalizeButton =
+      container.querySelector(
+        "#finalize-human-decision"
+      );
+
+    let selectedDecision = null;
+
+    decisionButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        selectedDecision =
+          button.dataset.humanDecision;
+
+        decisionButtons.forEach((b) =>
+          b.classList.remove("selected")
+        );
+
+        button.classList.add("selected");
+
+        if (finalizeButton) {
+          finalizeButton.disabled = false;
+        }
+      });
     });
-    closeVerifyModal();
-    toast(`Return Verified: ${res.decision}`);
-    await openDetail(res.return_id);
-  }catch(err){
-    errDiv.textContent=err.message||"Verification failed.";
-    errDiv.classList.remove("hidden");
-  }
-};
 
-$("#export-btn").onclick=()=>{const csv=["return_id,merchant_id,refund_amount,risk_score,decision",...(casesData||[]).map(c=>[c.return_id,c.merchant_id,c.refund_amount,c.risk_score,c.decision].join(","))].join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="reclaim-sentinel-cases.csv";a.click();toast("Case view exported");};
-boot().catch(err=>console.error(err));
+    if (finalizeButton) {
+      finalizeButton.addEventListener("click", () => {
+        if (!selectedDecision) {
+          showToast(
+            "Select a final decision first.",
+            "error"
+          );
+          return;
+        }
+
+        finalizeHumanDecision(
+          c.return_id,
+          selectedDecision
+        );
+      });
+    }
+
+  } catch (error) {
+    container.innerHTML = `
+      <div class="error-state">
+        <div class="error-title">
+          Unable to load case
+        </div>
+
+        <div class="error-message">
+          ${escapeHtml(error.message)}
+        </div>
+
+        <button
+          type="button"
+          onclick="openDetail('${escapeHtml(returnId)}')"
+        >
+          RETRY
+        </button>
+      </div>
+    `;
+
+    showToast(
+      error.message || "Unable to load case.",
+      "error"
+    );
+  }
+}
+
+async function initDashboard() {
+  try {
+    await loadSession();
+    await loadCases();
+  } catch (error) {
+    console.error(error);
+
+    showToast(
+      error.message || "Unable to load dashboard.",
+      "error"
+    );
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  initDashboard();
+});
+
+/*
+ * Expose functions for inline HTML handlers.
+ */
+window.openDetail = openDetail;
+window.loadCases = loadCases;
+window.finalizeHumanDecision = finalizeHumanDecision;

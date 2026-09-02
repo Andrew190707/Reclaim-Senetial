@@ -24,6 +24,8 @@ DB_PATH = DATA_DIR / "reclaim_sentinel.db"
 MODEL_SEED = 73
 START_DATE = datetime(2025, 1, 1, tzinfo=timezone.utc)
 DECISIONS = ("APPROVE REFUND", "HOLD REFUND", "ESCALATE TO HUMAN REVIEW")
+FINAL_DECISIONS = ("APPROVE REFUND", "DENY REFUND")
+HUMAN_REVIEW_DECISIONS = ("HOLD REFUND", "ESCALATE TO HUMAN REVIEW")
 
 app = Flask(__name__, static_folder="static")
 app.secret_key = os.environ.get("SESSION_SECRET", "local-reclaim-sentinel-demo-secret")
@@ -32,7 +34,7 @@ app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax", S
 DEMO_USERNAME = os.environ.get("DEMO_USERNAME", "sentinel-demo")
 DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "reclaim-2026")
 AUDIT_LOCK = Lock()
-STATE = {"cases": [], "model": None, "metrics": {}, "audit": [], "indexes": {}, "graph": None}
+STATE = {"cases": [], "model": None, "metrics": {}, "audit": [], "indexes": {}, "graph": None, "human_decisions": {}}
 REQUIRED_CASE_FIELDS = {
     "return_id", "merchant_id", "customer_id", "original_sku", "returned_sku",
     "original_package_weight", "returned_package_weight", "purchase_timestamp",
@@ -249,6 +251,16 @@ def init_db(cases):
     conn = sqlite3.connect(DB_PATH)
     conn.execute("CREATE TABLE IF NOT EXISTS return_cases (return_id TEXT PRIMARY KEY, payload TEXT NOT NULL, created_at TEXT NOT NULL)")
     conn.execute("CREATE TABLE IF NOT EXISTS audit_log (id INTEGER PRIMARY KEY AUTOINCREMENT, return_id TEXT, event_type TEXT, detail TEXT, created_at TEXT NOT NULL)")
+    conn.execute("""CREATE TABLE IF NOT EXISTS human_decisions (
+        return_id TEXT PRIMARY KEY,
+        automated_decision TEXT NOT NULL,
+        final_decision TEXT NOT NULL,
+        reviewer TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        automated_risk_score REAL,
+        automated_model_score REAL,
+        created_at TEXT NOT NULL
+    )""")
     existing = conn.execute("SELECT COUNT(*) FROM return_cases").fetchone()[0]
     if existing < len(cases):
         conn.executemany("INSERT OR REPLACE INTO return_cases VALUES (?, ?, ?)", [(c["return_id"], json.dumps(c), c["return_request_timestamp"]) for c in cases])
@@ -633,6 +645,56 @@ def audit_for(return_id):
     return [a for a in STATE["audit"] if a["return_id"] == return_id]
 
 
+def get_human_decision(return_id):
+    return STATE.get("human_decisions", {}).get(return_id)
+
+
+def persist_human_decision(return_id, record):
+    STATE.setdefault("human_decisions", {})[return_id] = record
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute(
+        """INSERT OR REPLACE INTO human_decisions
+           (return_id, automated_decision, final_decision, reviewer, reason,
+            automated_risk_score, automated_model_score, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+        (
+            record["return_id"],
+            record["automated_decision"],
+            record["final_decision"],
+            record["reviewer"],
+            record["reason"],
+            record["automated_risk_score"],
+            record["automated_model_score"],
+            record["created_at"],
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+
+def load_human_decisions():
+    conn = sqlite3.connect(DB_PATH)
+    rows = conn.execute(
+        """SELECT return_id, automated_decision, final_decision, reviewer, reason,
+                  automated_risk_score, automated_model_score, created_at
+           FROM human_decisions ORDER BY created_at"""
+    ).fetchall()
+    conn.close()
+    return {
+        row[0]: {
+            "return_id": row[0],
+            "automated_decision": row[1],
+            "final_decision": row[2],
+            "reviewer": row[3],
+            "reason": row[4],
+            "automated_risk_score": row[5],
+            "automated_model_score": row[6],
+            "created_at": row[7],
+        }
+        for row in rows
+    }
+
+
 def investigator_summary(case, decision, risk_score, rules, pattern, spike, failures=None):
 
     failures = failures or []
@@ -764,7 +826,7 @@ def analyze_case(case, use_llm=False):
         and pattern["score"] < .35
         and spike["severity"] == "normal"
     ):
-        decision = "APPROVE REFUND"    
+        decision = "APPROVE REFUND"
     else:
         decision = "ESCALATE TO HUMAN REVIEW"
     summary = investigator_summary(case, decision, risk_score, rules, pattern, spike, failures)
@@ -891,6 +953,7 @@ def warm_state():
     rows = conn.execute("SELECT return_id,event_type,detail,created_at FROM audit_log ORDER BY id").fetchall()
     STATE["audit"] = [{"return_id": r[0], "event_type": r[1], "detail": r[2], "created_at": r[3]} for r in rows]
     conn.close()
+    STATE["human_decisions"] = load_human_decisions()
     STATE["overview_data"] = compute_overview_data()
 
 
@@ -920,6 +983,7 @@ def login():
     data = request.get_json(silent=True) or {}
     if data.get("username") == DEMO_USERNAME and data.get("password") == DEMO_PASSWORD:
         session["authenticated"] = True
+        session["username"] = data.get("username", DEMO_USERNAME)
         return jsonify({"ok": True, "csrf_token": csrf_token(), "user": {"name": "Risk Operations", "role": "merchant_admin"}})
     return jsonify({"error": "Invalid demo credentials"}), 401
 
@@ -937,7 +1001,19 @@ def session_status():
 
 def case_card(case):
     result = analyze_case(case)
-    return {"return_id": case["return_id"], "merchant_id": case["merchant_id"], "customer_id": case["customer_id"], "refund_amount": case["refund_amount"], "return_reason": case["return_reason"], "return_request_timestamp": case["return_request_timestamp"], "decision": result["decision"], "risk_score": result["risk_score"], "risk_percent": result["risk_percent"]}
+    human = get_human_decision(case["return_id"])
+    return {
+        "return_id": case["return_id"],
+        "merchant_id": case["merchant_id"],
+        "customer_id": case["customer_id"],
+        "refund_amount": case["refund_amount"],
+        "return_reason": case["return_reason"],
+        "return_request_timestamp": case["return_request_timestamp"],
+        "decision": result["decision"],
+        "risk_score": result["risk_score"],
+        "risk_percent": result["risk_percent"],
+        "final_decision": human["final_decision"] if human else None,
+    }
 
 @app.get("/api/overview")
 @authenticated
@@ -968,6 +1044,9 @@ def case_detail(return_id):
     if not case:
         return jsonify({"error": "Case not found"}), 404
     result = analyze_case(case, use_llm=True)
+    human = get_human_decision(return_id)
+    result["human_decision"] = human
+    result["final_decision"] = human["final_decision"] if human else None
     if not audit_for(return_id):
         add_audit(return_id, "case_created", "Synthetic return case entered verification queue.")
         add_audit(return_id, "evidence_collected", "Pre-refund order, courier, warehouse, and customer history loaded.")
@@ -1033,6 +1112,7 @@ def dev_reset():
         # Clear persistent DB
         conn = sqlite3.connect(DB_PATH)
         conn.execute("DELETE FROM audit_log")
+        conn.execute("DELETE FROM human_decisions")
         conn.execute("DELETE FROM return_cases")
         conn.commit()
         conn.close()
@@ -1040,6 +1120,7 @@ def dev_reset():
         # Clear in-memory state
         STATE["cases"].clear()
         STATE["audit"].clear()
+        STATE["human_decisions"].clear()
         STATE["indexes"].clear()
         if STATE.get("graph") is not None:
             STATE["graph"].clear()
@@ -1048,6 +1129,66 @@ def dev_reset():
         warm_state()
         
     return jsonify({"ok": True, "message": "Development state reset to synthetic baseline."})
+
+
+@app.post("/api/cases/<return_id>/human-decision")
+@authenticated
+def human_decision(return_id):
+    if not valid_csrf():
+        return jsonify({"error": "CSRF validation failed"}), 403
+
+    case = next((c for c in STATE["cases"] if c["return_id"] == return_id), None)
+    if not case:
+        return jsonify({"error": "Case not found"}), 404
+
+    existing = get_human_decision(return_id)
+    if existing:
+        return jsonify({"error": "Human decision has already been finalized for this case."}), 409
+
+    data = request.get_json(silent=True) or {}
+    decision = data.get("decision")
+    if decision not in FINAL_DECISIONS:
+        return jsonify({"error": "Final decision must be APPROVE REFUND or DENY REFUND."}), 400
+
+    analysis = analyze_case(case, use_llm=False)
+    if analysis["decision"] not in HUMAN_REVIEW_DECISIONS:
+        return jsonify({
+            "error": "Human finalization is only available for cases routed to human review."
+        }), 409
+
+    reason = data.get("reason", "")
+    if not isinstance(reason, str):
+        return jsonify({"error": "Reviewer reason must be text under 500 characters."}), 400
+    reason = reason.strip()
+    if not 5 <= len(reason) <= 500:
+        return jsonify({"error": "Reviewer reason must be between 5 and 500 characters."}), 400
+
+    reviewer = session.get("username", DEMO_USERNAME)
+    now = iso(datetime.now(timezone.utc))
+    record = {
+        "return_id": return_id,
+        "automated_decision": analysis["decision"],
+        "final_decision": decision,
+        "reviewer": reviewer,
+        "reason": reason,
+        "automated_risk_score": analysis["risk_score"],
+        "automated_model_score": analysis["model_score"],
+        "created_at": now,
+    }
+
+    persist_human_decision(return_id, record)
+    add_audit(
+        return_id,
+        "human_decision",
+        f"Human reviewer '{reviewer}' finalized '{decision}'. Reason: {reason}",
+    )
+
+    return jsonify({
+        "ok": True,
+        "return_id": return_id,
+        "human_decision": record,
+        "message": "Final refund decision recorded."
+    })
 
 
 @app.post("/api/cases/<return_id>/override")
