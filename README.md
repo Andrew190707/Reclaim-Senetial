@@ -4,6 +4,7 @@
 [🚀 Live Demo](https://reclaim-senetial-production.up.railway.app)
 
 [📖 Documentation](./ARCHITECTURE.md)
+
 Reclaim Sentinel is a defense-only, pre-refund return verification system for merchants. It answers one narrow question: **should this refund be released, held, or sent to a human reviewer?**
 
 The prototype combines:
