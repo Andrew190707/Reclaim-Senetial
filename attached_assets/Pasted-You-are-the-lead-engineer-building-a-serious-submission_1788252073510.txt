@@ -1,0 +1,465 @@
+You are the lead engineer building a serious submission for the Razorpay AI Buildathon, Track 02: AI Risk Manager.
+
+PROJECT NAME:
+Reclaim Sentinel
+
+CORE PRODUCT:
+Reclaim Sentinel is an AI-powered RETURN-FRAUD VERIFICATION system for merchants.
+
+CORE PROBLEM:
+A merchant receives a return/refund request and must decide whether to release the refund. Fraudulent or manipulated returns can cause direct financial loss.
+
+Reclaim Sentinel must verify a return BEFORE the refund is released by combining:
+1. deterministic evidence verification,
+2. machine-learning risk scoring,
+3. historical customer/merchant return behaviour,
+4. coordinated abuse-pattern detection,
+5. sudden return-abuse spike detection,
+6. an explainable investigation layer.
+
+IMPORTANT PRODUCT BOUNDARY:
+This is NOT a generic fraud detector.
+This is NOT a generic return-risk scorer.
+This is NOT a chargeback responder.
+This is NOT a chatbot.
+
+The single class of loss being addressed is:
+FRAUDULENT / INVALID RETURNS THAT RESULT IN UNNECESSARY REFUNDS.
+
+CORE DECISION:
+For every return case, produce exactly one:
+- APPROVE REFUND
+- HOLD REFUND
+- ESCALATE TO HUMAN REVIEW
+
+The system must be conservative with money:
+If evidence is insufficient or conflicting, prefer HOLD or ESCALATE rather than inventing certainty.
+
+RAZORPAY BUILDATHON REQUIREMENTS:
+- Must be a genuinely working detector/verifier, not a mockup.
+- Must evaluate on a held-out test set.
+- Must report precision, recall, F1 and confusion matrix.
+- Must report false-positive cost explicitly.
+- Must support a business-impact metric such as estimated fraudulent refund amount prevented and legitimate refund value incorrectly held.
+- Must be strictly defense-only.
+- No offensive security features.
+- Must have graceful failure recovery.
+- Must make AI usage meaningful and explain where AI is intentionally NOT used.
+- Must be reproducible from the public GitHub repository.
+- Do not fabricate test results. Compute all metrics from actual generated/evaluated data.
+
+ARCHITECTURE:
+
+A. DATA LAYER
+Create a realistic SYNTHETIC dataset. Do not use private or real customer data.
+
+Generate at least 10,000 return cases with ground-truth labels:
+- legitimate_return
+- fraudulent_return
+
+Include realistic class imbalance.
+
+Fields should include, where appropriate:
+return_id
+order_id
+merchant_id
+customer_id
+product_id
+original_sku
+returned_sku
+original_product_category
+original_package_weight
+returned_package_weight
+purchase_timestamp
+delivery_timestamp
+return_request_timestamp
+pickup_timestamp
+warehouse_received_timestamp
+courier_status
+return_reason
+refund_amount
+customer_return_count
+customer_return_rate
+customer_previous_fraud_flags
+customer_account_age_days
+merchant_return_rate
+merchant_refund_rate
+merchant_category
+device_id
+shipping_address_hash
+payment_instrument_hash
+serial_number_match
+product_condition
+warehouse_scan_result
+previous_similar_claims
+and other justified features.
+
+Create realistic fraudulent patterns such as:
+- wrong SKU returned
+- major package-weight mismatch
+- serial-number mismatch
+- empty/partial package
+- repeated similar claims
+- impossible or inconsistent timestamps
+- repeated high-value returns
+- coordinated account/device/address patterns
+- sudden merchant-level return abuse spikes
+
+Do NOT create simplistic labels where one field directly reveals fraud.
+Labels must depend on combinations of features so the model actually has a meaningful task.
+
+B. DATA SPLITTING
+Create:
+- training set
+- validation set
+- untouched held-out test set
+
+Prevent leakage:
+- Do not allow future/outcome information to leak into training features.
+- Prefer time-aware splitting where appropriate.
+- Clearly document the split strategy.
+
+C. DETERMINISTIC VERIFICATION ENGINE
+Use rules for facts that should not require an LLM.
+
+Examples:
+- original SKU vs returned SKU
+- original serial vs returned serial
+- package weight discrepancy
+- impossible timestamp sequence
+- return policy violation
+- missing mandatory evidence
+- courier/warehouse status consistency
+
+Every rule must produce:
+rule_id
+result
+evidence
+severity
+
+D. MACHINE LEARNING MODEL
+Build a real baseline ML classifier for fraudulent returns.
+
+Preferred starting model:
+XGBoost or LightGBM.
+If unavailable, use a strong sklearn alternative.
+
+Do NOT use an LLM as the numerical fraud classifier.
+
+Output:
+fraud_probability
+
+Evaluate on held-out test data.
+
+Report:
+precision
+recall
+F1
+ROC-AUC where meaningful
+PR-AUC where meaningful
+confusion matrix
+threshold analysis
+
+Do not optimize only for accuracy.
+
+E. ABUSE PATTERN ENGINE
+Build a defensive graph/pattern analysis layer that identifies relationships among:
+customer
+device
+shipping address
+payment instrument
+merchant
+return
+
+Use NetworkX or another lightweight graph technology.
+
+The goal is NOT "generic fraud-ring detection".
+
+The purpose is to use coordinated-return behaviour as supporting evidence for a specific return-verification decision.
+
+Example:
+multiple accounts + shared device/address + similar return reasons + close timestamps.
+
+Produce:
+pattern_id
+connected entities
+supporting evidence
+confidence
+
+F. RETURN-ABUSE SPIKE DETECTOR
+Detect statistically unusual increases in suspicious return activity.
+
+Use a transparent method such as:
+rolling baseline
+z-score
+EWMA
+or another justified statistical approach.
+
+The output must include:
+baseline
+current rate
+deviation
+severity
+affected merchant
+time window
+
+G. DECISION ENGINE
+Combine deterministic evidence + ML score + abuse patterns + spike information.
+
+Do NOT allow an LLM to directly decide whether money should be released.
+
+Use a transparent policy layer.
+
+Example conceptual policy:
+- Strong clean evidence → APPROVE REFUND
+- Strong contradictory evidence → HOLD REFUND
+- Conflicting/insufficient evidence → ESCALATE
+
+Make thresholds configurable and document them.
+
+For every decision produce:
+decision
+risk_score
+evidence_summary
+triggered_rules
+model_score
+pattern_score
+decision_reason
+recommended_next_step
+
+H. AI INVESTIGATOR
+Use an LLM only where language reasoning is genuinely useful.
+
+The LLM should receive structured evidence from the deterministic/ML layers and create:
+- concise investigator summary
+- explanation of why the decision was made
+- evidence supporting the decision
+- missing/conflicting evidence
+- recommended human-review questions
+
+The LLM must NEVER invent evidence.
+The LLM must NEVER override deterministic safety controls.
+The LLM must NOT be the final money-moving authority.
+
+If evidence is insufficient, the LLM must explicitly say:
+"Insufficient evidence for an automated decision."
+
+I. FAILURE RECOVERY
+Design explicit graceful failure paths.
+
+Examples:
+- ML service unavailable
+- LLM unavailable
+- graph analysis unavailable
+- courier/evidence source unavailable
+- conflicting evidence
+- malformed record
+
+System behavior must remain safe.
+
+For example:
+LLM unavailable → decision engine still works.
+External evidence unavailable → HOLD/ESCALATE rather than APPROVE blindly.
+Model unavailable → deterministic safe fallback or escalation.
+
+Record failures in an audit log.
+
+J. EXPLAINABILITY
+Every case must have a "Why?" view.
+
+Example:
+
+RETURN #RX72819
+Refund amount: ₹38,999
+
+DECISION: HOLD REFUND
+Risk: 94%
+
+Evidence:
+- Returned SKU does not match original SKU
+- Returned package is 66% lighter than original shipment
+- Serial number mismatch
+- Customer has 4 previous similar claims
+
+Do not expose fictional evidence.
+
+K. MERCHANT DASHBOARD
+Build a clean professional dashboard.
+
+Pages:
+1. Overview
+2. Return Cases
+3. Case Details
+4. Abuse Patterns
+5. Return Abuse Spikes
+6. Model Evaluation
+7. Audit Logs
+
+The Case Details page is the centerpiece.
+
+Show:
+- return details
+- evidence
+- risk score
+- triggered rules
+- graph relationships
+- model reasoning
+- final verdict
+- failure state if applicable
+- audit trail
+
+Provide filters by:
+merchant
+risk
+decision
+return reason
+date
+amount
+
+L. MODEL EVALUATION PAGE
+This page is mandatory.
+
+Show metrics calculated from the actual held-out test set:
+- Precision
+- Recall
+- F1
+- confusion matrix
+- false-positive count
+- false-negative count
+- false-positive monetary cost
+- fraudulent refund amount detected
+- legitimate refund value incorrectly held
+- threshold trade-off chart/table
+
+Clearly label the test set as HELD-OUT TEST SET.
+
+Never hardcode metrics.
+
+M. BUSINESS IMPACT
+Calculate realistic monetary impact from actual test cases.
+
+Example structure:
+Fraudulent refunds prevented:
+₹X
+
+Legitimate refunds incorrectly held:
+₹Y
+
+Net protected merchant value:
+₹X - configurable cost assumptions
+
+Make cost assumptions visible and configurable.
+
+N. AUDIT TRAIL
+Record:
+case created
+evidence collected
+rules executed
+model score
+graph analysis result
+decision
+LLM explanation
+human override if used
+failure events
+final resolution
+
+The audit trail must be immutable within the prototype.
+
+O. SECURITY
+This is a defensive financial-risk product.
+
+Implement:
+- input validation
+- authentication for dashboard access
+- role-aware actions where practical
+- secure handling of synthetic identifiers
+- secrets stored in environment variables
+- no API keys committed to git
+- no offensive capabilities
+- no exploit generation
+- no credential harvesting
+
+P. TESTING
+Create automated tests for:
+- deterministic verification
+- feature generation
+- model inference
+- decision policy
+- failure fallback
+- malformed input
+- audit logging
+
+Include integration tests covering:
+legitimate return
+wrong SKU fraud
+weight mismatch fraud
+serial mismatch
+coordinated abuse
+insufficient evidence
+dependency failure
+
+Q. REPRODUCIBILITY
+Create:
+README.md
+SETUP.md
+ARCHITECTURE.md
+MODEL_CARD.md
+EVALUATION.md
+THREAT_MODEL.md
+LIMITATIONS.md
+
+README must include:
+- what Reclaim Sentinel solves
+- why the problem matters
+- architecture
+- setup
+- dataset generation
+- training
+- evaluation
+- how to run
+- demo credentials if necessary
+- example case
+- limitations
+- known failure cases
+
+Provide a single clear command for local startup where feasible.
+
+R. GITHUB QUALITY
+Organize repository cleanly.
+
+Suggested structure:
+
+reclaim-sentinel/
+  frontend/
+  backend/
+  ml/
+  rules/
+  graph/
+  data/
+  scripts/
+  tests/
+  docs/
+  README.md
+  ARCHITECTURE.md
+  MODEL_CARD.md
+  EVALUATION.md
+  THREAT_MODEL.md
+  LIMITATIONS.md
+  .env.example
+  docker-compose.yml
+
+Do not leave dead code, placeholder functions or fake integrations.
+
+IMPORTANT IMPLEMENTATION PRINCIPLE:
+Build the simplest robust system that satisfies the above requirements.
+Prioritize correctness, reproducibility, explainability and measurable performance over visual gimmicks.
+
+Before writing code:
+1. propose the architecture,
+2. identify risks of data leakage,
+3. identify where ML is appropriate,
+4. identify where deterministic rules are better,
+5. identify exactly where an LLM adds value,
+6. define evaluation methodology.
+
+Then implement the system end to end.
