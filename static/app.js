@@ -56,8 +56,8 @@ async function loadOverview(){
 async function loadCases(){
   const risk=$("#filter-risk").value, reason=$("#filter-reason").value;
   const data=await api(`/api/cases?risk=${encodeURIComponent(risk)}&reason=${encodeURIComponent(reason)}`);
-  casesData=data.cases;
-  $("#case-count").textContent=`${data.count.toLocaleString("en-IN")} cases`;
+ casesData=data.cases.filter(c=>!c.final_decision);
+ $("#case-count").textContent=`${casesData.length.toLocaleString("en-IN")} cases`;
   if ($("#filter-reason").options.length===1) data.reasons.forEach(r=>$("#filter-reason").insertAdjacentHTML("beforeend",`<option>${r}</option>`));
   renderCases(casesData);
 }
@@ -84,7 +84,7 @@ function humanReviewMarkup(c,a){
       <button type="button" class="human-decision-btn" data-decision="APPROVE REFUND">APPROVE REFUND</button>
       <button type="button" class="human-decision-btn" data-decision="DENY REFUND">DENY REFUND</button>
     </div>
-    <textarea id="human-review-reason" rows="4" placeholder="Reviewer note / reason (required, 5-500 characters)" style="width:100%;box-sizing:border-box;padding:12px;border:1px solid #d9dee7;border-radius:8px;resize:vertical"></textarea>
+    <textarea id="human-review-reason" rows="4" placeholder="Reviewer note / reason (required, 5-500 characters)" style="width:100%;box-sizing:border-box;padding:12px;border:1px solid var(--border);border-radius:8px;resize:vertical;background:var(--bg-sidebar);color:var(--text-primary);caret-color:var(--text-primary)"></textarea>
     <button type="button" id="finalize-human-decision" disabled style="margin-top:12px">FINALIZE DECISION</button>
   </article>`;
 }
