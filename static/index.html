@@ -6,7 +6,7 @@
   <title>Reclaim Sentinel — Return Risk Operations</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -59,10 +59,30 @@
       <section id="page-overview" class="page active-page">
         <div class="page-heading"><div><p class="eyebrow">TUESDAY · 01 SEP 2026</p><h1>Good morning, <em>Risk Ops.</em></h1><p class="subhead">Here’s what needs your attention across return verification.</p></div><button class="btn btn-secondary" data-page-jump="cases">View all cases <span>→</span></button></div>
         <div class="metric-grid">
-          <article class="metric-card"><div class="metric-top"><span>RETURN CASES</span><span class="metric-icon blue">⊞</span></div><strong id="metric-cases">—</strong><div class="metric-trend positive">↑ <b>8.4%</b><small> vs previous period</small></div></article>
-          <article class="metric-card"><div class="metric-top"><span>PROTECTED VALUE</span><span class="metric-icon coral">₹</span></div><strong id="metric-value">—</strong><div class="metric-trend positive">↑ <b>12.1%</b><small> fraud prevented</small></div></article>
-          <article class="metric-card"><div class="metric-top"><span>NEEDS REVIEW</span><span class="metric-icon yellow">!</span></div><strong id="metric-review">—</strong><div class="metric-trend warning"><b>Action required</b><small> across active queue</small></div></article>
-          <article class="metric-card"><div class="metric-top"><span>MODEL HEALTH</span><span class="metric-icon green">✓</span></div><strong class="health-value">Online</strong><div class="metric-trend positive"><span class="pulse"></span><b>99.98%</b><small> scoring availability</small></div></article>
+          <article class="metric-card">
+            <div class="metric-top"><span>RETURN CASES</span><span class="metric-icon blue">⊞</span></div>
+            <strong id="metric-cases">—</strong>
+            <div class="metric-trend positive">↑ <b>8.4%</b><small> vs previous period</small></div>
+            <div class="causality-ribbon"><span class="causality-tag">Why:</span> Baseline transaction volume grew across connected merchant cohorts.</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span>PROTECTED VALUE</span><span class="metric-icon coral">₹</span></div>
+            <strong id="metric-value">—</strong>
+            <div class="metric-trend positive">↑ <b>12.1%</b><small> fraud prevented</small></div>
+            <div class="causality-ribbon"><span class="causality-tag">Why:</span> High-severity SKU & serial mismatches caught prior to refund payout.</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span>NEEDS REVIEW</span><span class="metric-icon yellow">!</span></div>
+            <strong id="metric-review">—</strong>
+            <div class="metric-trend warning"><b>Action required</b><small> across active queue</small></div>
+            <div class="causality-ribbon"><span class="causality-tag">Why:</span> Ambiguous package weight deltas routed for supervisor sign-off.</div>
+          </article>
+          <article class="metric-card">
+            <div class="metric-top"><span>MODEL HEALTH</span><span class="metric-icon green">✓</span></div>
+            <strong class="health-value">Online</strong>
+            <div class="metric-trend positive"><span class="pulse"></span><b>99.98%</b><small> scoring availability</small></div>
+            <div class="causality-ribbon"><span class="causality-tag">Why:</span> Real-time random forest pipeline operating within latency SLAs.</div>
+          </article>
         </div>
         <div class="overview-grid">
           <article class="panel chart-panel"><div class="panel-heading"><div><p class="eyebrow">DECISION FLOW</p><h2>Return verdicts</h2></div><span class="period-chip">Last 30 days⌄</span></div><div class="decision-chart"><div class="donut"><div><strong id="donut-total">—</strong><small>ANALYZED</small></div></div><div class="legend"><div><i class="legend-dot approve"></i><span>Approve refund</span><b id="legend-approve">—</b></div><div><i class="legend-dot hold"></i><span>Hold refund</span><b id="legend-hold">—</b></div><div><i class="legend-dot escalate"></i><span>Human review</span><b id="legend-escalate">—</b></div></div></div><div class="chart-foot"><span><i class="legend-dot high"></i> High risk</span><span><i class="legend-dot mid"></i> Medium risk</span><span><i class="legend-dot low"></i> Low risk</span></div></article>

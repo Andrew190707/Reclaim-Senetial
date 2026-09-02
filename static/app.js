@@ -47,7 +47,7 @@ async function loadOverview(){
     const escPct = holdPct + (escalate / total) * 100;
     $(".donut").style.background = `conic-gradient(var(--coral) 0 ${holdPct}%, var(--yellow) ${holdPct}% ${escPct}%, var(--blue) ${escPct}% 100%)`;
   } else {
-    $(".donut").style.background = `conic-gradient(#e5e9ef 0 100%)`;
+    $(".donut").style.background = `conic-gradient(#1e293b 0 100%)`;
   }
   
   $("#recent-cases").innerHTML = overviewData.latest_cases.map(c=>caseRow(c,true)).join("");
