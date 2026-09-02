@@ -11,3 +11,12 @@ dependencies = [
     "scikit-learn>=1.9.0",
     "gunicorn",
 ]
+
+# Not required to run the app. Only used by scripts/compare_models.py to
+# reproduce the Random Forest vs LightGBM vs XGBoost comparison referenced
+# in MODEL_SELECTION.md. Install with: pip install -e ".[model-comparison]"
+[project.optional-dependencies]
+model-comparison = [
+    "lightgbm>=4.0",
+    "xgboost>=2.0",
+]

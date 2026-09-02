@@ -6,7 +6,7 @@ The prototype combines:
 
 - deterministic evidence rules for SKU, serial, weight, timing, policy, courier, and warehouse checks;
 - a real Random Forest classifier trained on 12,000 synthetic return records;
-- time-aware train / validation / untouched held-out test splits;
+- time-aware train / validation / untouched held-out test splits, plus a disjoint Cold-Entity test set;
 - NetworkX-backed coordinated-return analysis across customers, devices, addresses, and payments;
 - a transparent four-week rolling baseline spike detector;
 - a conservative policy layer with exactly three possible verdicts;
@@ -14,6 +14,17 @@ The prototype combines:
 - immutable-in-prototype audit events and safe failure paths.
 
 No real customer data is used. No offensive security functionality is included.
+
+## Canonical metrics — read this first
+
+This repo has several markdown docs written at different points as the model evolved (`MODEL_SELECTION.md`, `HYPERPARAMETER_TUNING.md`, `ML_INTEGRITY_AUDIT.md`). **They are historical / audit-trail documents, not live claims.** Numbers can drift out of sync with the code as it changes.
+
+The one source of truth for current metrics is:
+
+- **Live**: `GET /api/evaluation`, or the "Model Evaluation" page in the dashboard — recomputed from a fresh dataset generation + model training every time the server starts, from the fixed seed in `main.py`.
+- **Model comparison**: `python3 scripts/compare_models.py` regenerates the Random Forest vs LightGBM vs XGBoost comparison cited in `MODEL_SELECTION.md` §5, using the exact same `generate_dataset`/`feature_vector`/`MODEL_SEED` as the running app. LightGBM and XGBoost are only needed for this one script — they are not dependencies of the deployed app itself (see `pyproject.toml`'s `model-comparison` optional group).
+
+If a number in a doc and a number from the live endpoint ever disagree, trust the live endpoint and treat the doc as needing an update.
 
 ## Run locally
 
@@ -31,7 +42,7 @@ The dashboard includes Overview, Return Cases, Case Details, Abuse Patterns, Ret
 
 ## Reproducibility
 
-The random seed is fixed in `main.py`. The dataset is synthetic and created from combinations of noisy, pre-refund fields; the ground-truth label is never passed to the feature generator. The classifier trains on the first 70% of purchase time, validates conceptually on the next 15%, and evaluates on the final untouched 15%.
+The random seed is fixed in `main.py`. The dataset is synthetic and created from combinations of noisy, pre-refund fields; the ground-truth label is never passed to the feature generator. The classifier trains on the first 70% of purchase time, validates conceptually on the next 15%, and evaluates on the final untouched 15%, with a fully disjoint Cold-Entity test set layered on top.
 
 Supporting documentation:
 
@@ -39,6 +50,9 @@ Supporting documentation:
 - [ARCHITECTURE.md](ARCHITECTURE.md)
 - [MODEL_CARD.md](MODEL_CARD.md)
 - [EVALUATION.md](EVALUATION.md)
+- [MODEL_SELECTION.md](MODEL_SELECTION.md) — see the "Canonical metrics" note above before citing numbers from this file
+- [HYPERPARAMETER_TUNING.md](HYPERPARAMETER_TUNING.md)
+- [ML_INTEGRITY_AUDIT.md](ML_INTEGRITY_AUDIT.md) — historical audit trail documenting a real leakage issue that was found and fixed; kept for transparency
 - [THREAT_MODEL.md](THREAT_MODEL.md)
 - [LIMITATIONS.md](LIMITATIONS.md)
 
