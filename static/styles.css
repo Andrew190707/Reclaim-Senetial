@@ -346,6 +346,10 @@ button {
 
 .sidebar {
   width: 240px;
+  height: 100vh;
+  position: fixed;
+  top: 0;
+  left: 0;
   flex-shrink: 0;
   background: var(--bg-sidebar);
   border-right: 1px solid var(--border);
@@ -354,6 +358,9 @@ button {
   flex-direction: column;
   justify-content: space-between;
   padding: 24px 16px 18px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 100;
 }
 
 .brand-lockup {
@@ -533,6 +540,7 @@ button {
    ========================================================================== */
 .main {
   width: calc(100% - 240px);
+  margin-left: 240px;
   min-width: 0;
   background-color: var(--bg-canvas);
 }
