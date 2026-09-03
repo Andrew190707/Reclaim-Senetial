@@ -54,12 +54,46 @@ async function loadOverview(){
   bindCaseRows();
 }
 async function loadCases(){
-  const risk=$("#filter-risk").value, reason=$("#filter-reason").value;
-  const data=await api(`/api/cases?risk=${encodeURIComponent(risk)}&reason=${encodeURIComponent(reason)}`);
- casesData=data.cases.filter(c=>!c.final_decision);
- $("#case-count").textContent=`${casesData.length.toLocaleString("en-IN")} cases`;
-  if ($("#filter-reason").options.length===1) data.reasons.forEach(r=>$("#filter-reason").insertAdjacentHTML("beforeend",`<option>${r}</option>`));
-  renderCases(casesData);
+  const data=await api("/api/cases");
+
+  casesData=data.cases.filter(c=>!c.final_decision);
+
+  if($("#filter-reason").options.length===1){
+    data.reasons.forEach(r=>{
+      $("#filter-reason").insertAdjacentHTML(
+        "beforeend",
+        `<option value="${r}">${r}</option>`
+      );
+    });
+  }
+
+  applyCaseFilters();
+}
+
+function applyCaseFilters(){
+  const risk=$("#filter-risk").value;
+  const reason=$("#filter-reason").value;
+
+  let filtered=casesData||[];
+
+  if(risk==="high"){
+    filtered=filtered.filter(c=>Number(c.risk_score)>=0.65);
+  }else if(risk==="medium"){
+    filtered=filtered.filter(
+      c=>Number(c.risk_score)>=0.35 && Number(c.risk_score)<0.65
+    );
+  }else if(risk==="low"){
+    filtered=filtered.filter(c=>Number(c.risk_score)<0.35);
+  }
+
+  if(reason){
+    filtered=filtered.filter(c=>c.return_reason===reason);
+  }
+
+  $("#case-count").textContent=
+    `${filtered.length.toLocaleString("en-IN")} cases`;
+
+  renderCases(filtered);
 }
 function renderCases(list){
   const search=($("#case-search").value||"").toLowerCase();
@@ -151,7 +185,18 @@ async function openDetail(id){
   }
 }
 async function loadPatterns(){ const d=await api("/api/patterns"); $("#graph-nodes").textContent=d.graph_nodes.toLocaleString("en-IN"); $("#linked-cases").textContent=d.linked_cases.toLocaleString("en-IN"); $("#active-clusters").textContent=d.patterns.length.toString().padStart(2,"0"); $("#patterns-list").innerHTML=d.patterns.map(p=>`<div class="pattern-row"><strong>${p.pattern_id}</strong><p>${p.supporting_evidence}<br><small>${p.connected_entities.join(" · ")}</small></p><span class="confidence">${Math.round(p.confidence*100)}% <small>confidence</small></span><button class="text-link" data-open-case="${p.case_id}">Inspect →</button></div>`).join("") || `<p class="subhead">No coordinated patterns met the evidence threshold.</p>`; $$("[data-open-case]").forEach(b=>b.onclick=()=>openDetail(b.dataset.openCase)); }
-async function loadSpikes(){ const d=await api("/api/spikes"); $("#spikes-table").innerHTML=d.spikes.map(s=>`<tr><td><strong>${s.affected_merchant}</strong></td><td>${s.time_window}</td><td>${s.baseline}%</td><td>${s.current_rate}%</td><td class="spike-deviation">${s.deviation}σ</td><td><span class="severity ${s.severity==="high"?"high":"medium"}">${s.severity.toUpperCase()}</span></td><td><button class="text-link" data-open-case="${s.case_id}">Inspect →</button></td></tr>`).join(""); $$("[data-open-case]").forEach(b=>b.onclick=()=>openDetail(b.dataset.openCase)); }
+async function loadSpikes(){
+  const d=await api("/api/spikes");
+
+  $("#spikes-table").innerHTML=d.spikes.map(s=>`<tr><td><strong>${s.affected_merchant}</strong></td><td>${s.time_window}</td><td>${s.baseline}%</td><td>${s.current_rate}%</td><td class="spike-deviation">${s.deviation}σ</td><td><span class="severity ${s.severity==="high"?"high":"medium"}">${s.severity.toUpperCase()}</span></td><td><button class="text-link" data-open-case="${s.case_id}">Inspect →</button></td></tr>`).join("");
+
+  const spikeCount=$(".alert-count");
+  if(spikeCount){
+    spikeCount.textContent=String(d.spikes.length).padStart(2,"0");
+  }
+
+  $$("[data-open-case]").forEach(b=>b.onclick=()=>openDetail(b.dataset.openCase));
+}
 async function loadEvaluation(){ const d=await api("/api/evaluation"); $("#eval-precision").textContent=(d.precision*100).toFixed(1)+"%"; $("#eval-recall").textContent=(d.recall*100).toFixed(1)+"%"; $("#eval-f1").textContent=(d.f1*100).toFixed(1)+"%"; $("#eval-prauc").textContent=d.pr_auc.toFixed(3); const m=d.confusion_matrix; $("#cm-tn").textContent=m[0][0].toLocaleString(); $("#cm-fp").textContent=m[0][1].toLocaleString(); $("#cm-fn").textContent=m[1][0].toLocaleString(); $("#cm-tp").textContent=m[1][1].toLocaleString(); $("#eval-fp").textContent=d.false_positives.toLocaleString(); $("#eval-fn").textContent=d.false_negatives.toLocaleString(); $("#eval-cost").textContent=money(d.false_positive_cost_per_case); $("#eval-prevented").textContent=money(d.fraudulent_refunds_prevented); $("#eval-held").textContent=money(d.legitimate_value_held); $("#eval-net").textContent=money(d.fraudulent_refunds_prevented-d.legitimate_value_held); $("#split-note").textContent=`${d.split} Dataset: ${d.dataset_size.toLocaleString()} cases · train ${d.train_size.toLocaleString()} · validation ${d.validation_size.toLocaleString()} · test ${d.test_size.toLocaleString()} · ROC-AUC ${d.roc_auc}`; $("#threshold-table").innerHTML=d.thresholds.map(x=>`<tr class="${x.threshold===.5?"current":""}"><td><strong>${x.threshold.toFixed(2)}</strong></td><td>${(x.precision*100).toFixed(1)}%</td><td>${(x.recall*100).toFixed(1)}%</td><td>${(x.f1*100).toFixed(1)}%</td><td>${x.false_positives}</td><td>${x.false_negatives}</td></tr>`).join(""); }
 async function loadAudit(){ const d=await api("/api/audit"); $("#audit-list").innerHTML=d.events.map(x=>`<div class="audit-item"><strong>${x.event_type.replaceAll("_"," ").toUpperCase()}</strong><span class="audit-case">${x.return_id}</span><span>${x.detail}</span><time>${new Date(x.created_at).toLocaleString("en-IN")}</time></div>`).join("") || `<p class="subhead">No case has been opened yet. Open a case to create its immutable verification trail.</p>`; }
 function navigate(page){ $$(".page").forEach(p=>p.classList.remove("active-page")); $(`#page-${page}`).classList.add("active-page"); $$(".nav-item").forEach(n=>n.classList.toggle("active",n.dataset.page===page)); $("#crumb-current").textContent=page.replaceAll("-"," ").toUpperCase(); window.scrollTo(0,0); if(page==="cases")loadCases(); if(page==="patterns")loadPatterns(); if(page==="spikes")loadSpikes(); if(page==="evaluation")loadEvaluation(); if(page==="audit")loadAudit(); }
@@ -160,7 +205,9 @@ $("#login-form").addEventListener("submit",async e=>{e.preventDefault(); const f
 $("#logout-btn").onclick=async()=>{try{await api("/api/logout",{method:"POST"});}catch(e){} csrfToken=null; showLogin();};
 $$(".nav-item").forEach(b=>b.onclick=()=>navigate(b.dataset.page));
 $$("[data-page-jump]").forEach(b=>b.onclick=()=>navigate(b.dataset.pageJump));
-$("#filter-risk").onchange=loadCases; $("#filter-reason").onchange=loadCases; $("#case-search").oninput=()=>renderCases(casesData||[]);
+$("#filter-risk").onchange=applyCaseFilters;
+$("#filter-reason").onchange=applyCaseFilters;
+$("#case-search").oninput=()=>renderCases(casesData||[]);
 $("#refresh-audit").onclick=loadAudit;
 
 const notificationBtn = $("#notifications-btn");
