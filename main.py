@@ -26,6 +26,17 @@ START_DATE = datetime(2025, 1, 1, tzinfo=timezone.utc)
 DECISIONS = ("APPROVE REFUND", "HOLD REFUND", "ESCALATE TO HUMAN REVIEW")
 FINAL_DECISIONS = ("APPROVE REFUND", "DENY REFUND")
 HUMAN_REVIEW_DECISIONS = ("HOLD REFUND", "ESCALATE TO HUMAN REVIEW")
+# These are presentation bands for explaining an already-computed model score.
+# They deliberately do not participate in the decision policy below.
+MODEL_LOW_RISK_THRESHOLD = 0.35
+MODEL_HIGH_RISK_THRESHOLD = 0.65
+RULE_FAILURE_LABELS = {
+    "SKU-001": "SKU mismatch",
+    "TIME-005": "timeline mismatch",
+    "COURIER-007": "courier status mismatch",
+    "EVIDENCE-008": "unverified warehouse evidence",
+    "INPUT-000": "input evidence failure",
+}
 
 app = Flask(__name__, static_folder="static")
 app.secret_key = os.environ.get("SESSION_SECRET", "local-reclaim-sentinel-demo-secret")
@@ -33,6 +44,11 @@ app.config["JSON_SORT_KEYS"] = False
 app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax", SESSION_COOKIE_SECURE=os.environ.get("REPLIT_DEPLOYMENT") == "1")
 DEMO_USERNAME = os.environ.get("DEMO_USERNAME", "sentinel-demo")
 DEMO_PASSWORD = os.environ.get("DEMO_PASSWORD", "reclaim-2026")
+RISK_ANALYST_ROLE = "Risk Analyst"
+VIEWER_ROLE = "Viewer"
+DEMO_ROLE = os.environ.get("DEMO_ROLE", RISK_ANALYST_ROLE)
+if DEMO_ROLE not in (RISK_ANALYST_ROLE, VIEWER_ROLE):
+    DEMO_ROLE = RISK_ANALYST_ROLE
 AUDIT_LOCK = Lock()
 STATE = {"cases": [], "model": None, "metrics": {}, "audit": [], "indexes": {}, "graph": None, "human_decisions": {}}
 REQUIRED_CASE_FIELDS = {
@@ -813,6 +829,31 @@ def analyze_case(case, use_llm=False):
         failures.append(f"Spike detector unavailable: {type(exc).__name__}")
     critical = [r for r in rules if r["result"] == "fail" and r["severity"] == "critical"]
     high_flags = [r for r in rules if r["result"] == "fail"]
+    if model_score is None:
+        model_risk_band = "unavailable"
+    elif model_score < MODEL_LOW_RISK_THRESHOLD:
+        model_risk_band = "low"
+    elif model_score >= MODEL_HIGH_RISK_THRESHOLD:
+        model_risk_band = "high"
+    else:
+        model_risk_band = "medium"
+
+    # Display-only explanation of an existing rule-vs-model comparison.  This
+    # makes a conservative evidence override visible without changing scoring.
+    model_rule_disagreement = None
+    if model_risk_band == "low" and high_flags:
+        failed_rule = high_flags[0]
+        model_rule_disagreement = {
+            "type": "low_ml_hard_evidence_failure",
+            "model_band": "LOW",
+            "evidence_failure_name": RULE_FAILURE_LABELS.get(failed_rule["rule_id"], failed_rule["rule_id"]),
+            "evidence_failure": failed_rule["evidence"],
+        }
+    elif model_risk_band == "high" and not high_flags:
+        model_rule_disagreement = {
+            "type": "high_ml_no_evidence_failure",
+            "model_band": "HIGH",
+        }
     rule_score = min(1, len(high_flags) * .25 + sum(.12 for r in rules if r["result"] == "flag"))
     risk_score = (.55 * model_score + .25 * rule_score + .15 * pattern["score"] + .05 * spike["score"]) if model_score is not None else min(.95, rule_score + pattern["score"] * .25)
     if failures:
@@ -831,7 +872,7 @@ def analyze_case(case, use_llm=False):
         decision = "ESCALATE TO HUMAN REVIEW"
     summary = investigator_summary(case, decision, risk_score, rules, pattern, spike, failures)
     reason = "Critical evidence mismatch requires a refund hold." if critical else "Combined evidence crosses the configured hold threshold." if decision == "HOLD REFUND" else "Signals are mixed; a human should verify the return before releasing funds." if decision == "ESCALATE TO HUMAN REVIEW" else "Deterministic checks are clean and combined model risk is below the approval threshold."
-    result = {"return_id": case["return_id"], "decision": decision, "risk_score": round(float(risk_score), 4), "risk_percent": round(float(risk_score) * 100), "model_score": None if model_score is None else round(model_score, 4), "pattern_score": round(pattern["score"], 4), "rule_score": round(rule_score, 4), "evidence_summary": summary["supporting_evidence"] + ([pattern["supporting_evidence"]] if pattern["score"] > .35 else []), "triggered_rules": rules, "pattern": pattern, "spike": spike, "decision_reason": reason, "recommended_next_step": "Do not release refund; inspect item and original fulfillment evidence." if decision == "HOLD REFUND" else "Route to trained reviewer before refund release." if decision == "ESCALATE TO HUMAN REVIEW" else "Release refund after standard settlement checks.", "investigator": summary, "failures": failures, "audit_trail": audit_for(case["return_id"])}
+    result = {"return_id": case["return_id"], "decision": decision, "risk_score": round(float(risk_score), 4), "risk_percent": round(float(risk_score) * 100), "model_score": None if model_score is None else round(model_score, 4), "model_risk_band": model_risk_band, "model_rule_disagreement": model_rule_disagreement, "pattern_score": round(pattern["score"], 4), "rule_score": round(rule_score, 4), "evidence_summary": summary["supporting_evidence"] + ([pattern["supporting_evidence"]] if pattern["score"] > .35 else []), "triggered_rules": rules, "pattern": pattern, "spike": spike, "decision_reason": reason, "recommended_next_step": "Do not release refund; inspect item and original fulfillment evidence." if decision == "HOLD REFUND" else "Route to trained reviewer before refund release." if decision == "ESCALATE TO HUMAN REVIEW" else "Release refund after standard settlement checks.", "investigator": summary, "failures": failures, "audit_trail": audit_for(case["return_id"])}
     if use_llm:
         questions = call_llm_review_questions(case, result)
         if questions:
@@ -978,13 +1019,24 @@ def valid_csrf():
     return bool(supplied and expected and secrets.compare_digest(supplied, expected))
 
 
+def risk_analyst_required(fn):
+    """Minimal role gate; sessions created before roles remain analyst sessions."""
+    @wraps(fn)
+    def wrapped(*args, **kwargs):
+        if session.get("role", RISK_ANALYST_ROLE) != RISK_ANALYST_ROLE:
+            return jsonify({"error": "Risk Analyst role required to finalize a human-review decision."}), 403
+        return fn(*args, **kwargs)
+    return wrapped
+
+
 @app.post("/api/login")
 def login():
     data = request.get_json(silent=True) or {}
     if data.get("username") == DEMO_USERNAME and data.get("password") == DEMO_PASSWORD:
         session["authenticated"] = True
         session["username"] = data.get("username", DEMO_USERNAME)
-        return jsonify({"ok": True, "csrf_token": csrf_token(), "user": {"name": "Risk Operations", "role": "merchant_admin"}})
+        session["role"] = DEMO_ROLE
+        return jsonify({"ok": True, "csrf_token": csrf_token(), "user": {"name": "Risk Operations", "role": DEMO_ROLE}})
     return jsonify({"error": "Invalid demo credentials"}), 401
 
 
@@ -996,7 +1048,7 @@ def logout():
 
 @app.get("/api/session")
 def session_status():
-    return jsonify({"authenticated": bool(session.get("authenticated")), "csrf_token": csrf_token() if session.get("authenticated") else None, "demo": f"{DEMO_USERNAME} / {DEMO_PASSWORD}"})
+    return jsonify({"authenticated": bool(session.get("authenticated")), "csrf_token": csrf_token() if session.get("authenticated") else None, "role": session.get("role", RISK_ANALYST_ROLE) if session.get("authenticated") else None, "demo": f"{DEMO_USERNAME} / {DEMO_PASSWORD}"})
 
 
 def case_card(case):
@@ -1133,6 +1185,7 @@ def dev_reset():
 
 @app.post("/api/cases/<return_id>/human-decision")
 @authenticated
+@risk_analyst_required
 def human_decision(return_id):
     if not valid_csrf():
         return jsonify({"error": "CSRF validation failed"}), 403

@@ -7,6 +7,8 @@ const decisionShort = (d) => d.includes("HOLD") ? "HOLD REFUND" : d.includes("ES
 const riskClass = (n) => n >= .65 ? "risk-high" : n >= .35 ? "risk-mid" : "risk-low";
 let overviewData, casesData;
 let csrfToken = null;
+let demoRunning = false;
+let currentUserRole = "Risk Analyst";
 
 async function api(path, options = {}) {
   const headers = { "Content-Type": "application/json", ...(options.headers || {}) };
@@ -108,6 +110,10 @@ function humanReviewMarkup(c,a){
 
   if (!["HOLD REFUND","ESCALATE TO HUMAN REVIEW"].includes(a.decision)) return "";
 
+  if(currentUserRole !== "Risk Analyst"){
+    return `<article class="panel human-review-panel"><h3 class="section-title">Human review</h3><div class="recommend"><strong>Automated decision: ${a.decision}</strong><br><small>${a.decision_reason}</small><br><br><small>Read-only access: a Risk Analyst must finalize this decision.</small></div></article>`;
+  }
+
   return `<article class="panel human-review-panel">
     <h3 class="section-title">Human review</h3>
     <div class="recommend">
@@ -121,6 +127,15 @@ function humanReviewMarkup(c,a){
     <textarea id="human-review-reason" rows="4" placeholder="Reviewer note / reason (required, 5-500 characters)" style="width:100%;box-sizing:border-box;padding:12px;border:1px solid var(--border);border-radius:8px;resize:vertical;background:var(--bg-sidebar);color:var(--text-primary);caret-color:var(--text-primary)"></textarea>
     <button type="button" id="finalize-human-decision" disabled style="margin-top:12px">FINALIZE DECISION</button>
   </article>`;
+}
+function modelDisagreementMarkup(a){
+  const d=a.model_rule_disagreement;
+  if(!d || a.model_score===null) return "";
+  const score=Math.round(a.model_score*100);
+  if(d.type==="low_ml_hard_evidence_failure"){
+    return `<div class="model-disagreement"><strong>MODEL DISAGREEMENT</strong><br>ML risk: ${score}% (LOW) — but ${d.evidence_failure_name} (${d.evidence_failure}) is a hard evidence failure. Escalating anyway.</div>`;
+  }
+  return `<div class="model-disagreement"><strong>MODEL DISAGREEMENT</strong><br>ML risk: ${score}% (HIGH) — no deterministic evidence failure found. Flagging for review.</div>`;
 }
 
 async function finalizeHumanDecision(id){
@@ -168,7 +183,7 @@ async function openDetail(id){
   const rules=a.triggered_rules.map(r=>`<div class="rule-row"><span class="rule-id">${r.rule_id}</span><span class="rule-result ${r.result}">${r.result}</span><span class="rule-evidence">${r.evidence}</span></div>`).join("");
   const evidence=a.evidence_summary.map(e=>`<li>${e}</li>`).join("");
   const timeline=a.audit_trail.map(x=>`<div class="timeline-item"><strong>${x.event_type.replaceAll("_"," ")}</strong><small>${new Date(x.created_at).toLocaleString("en-IN")}</small><span>${x.detail}</span></div>`).join("");
-  $("#detail-content").innerHTML=`<div class="detail-grid"><div class="detail-main"><article class="panel"><div class="case-identity"><div><div class="case-big">${c.return_id}</div><small>${c.customer_id} · ${c.product_id}</small></div><div class="identity-badge"><span>REFUND VALUE</span><strong>${money(c.refund_amount)}</strong></div></div><div class="detail-facts"><div><span>RETURN REASON</span><strong>${c.return_reason}</strong></div><div><span>ORIGINAL SKU</span><strong>${c.original_sku}</strong></div><div><span>RETURNED SKU</span><strong>${c.returned_sku}</strong></div><div><span>WAREHOUSE</span><strong>${c.warehouse_scan_result.replaceAll("_"," ")}</strong></div></div></article><article class="panel"><h3 class="section-title">Deterministic evidence checks</h3>${rules}</article><article class="panel"><h3 class="section-title">Investigator summary</h3><div class="recommend"><strong>${a.investigator.summary}</strong>${a.investigator.why}</div><ul class="evidence-list">${evidence}</ul><div class="recommend"><strong>Recommended human-review questions</strong>${a.investigator.review_questions.join("<br>")}</div></article></div><div class="detail-side"><article class="panel"><div class="risk-card"><div class="risk-ring" style="--risk:${a.risk_percent}%"><span>${a.risk_percent}%</span></div><div class="risk-copy"><strong>${a.decision}</strong><small>${a.decision_reason}</small></div></div><div class="score-bars"><div class="score-bar"><span>ML model</span><div class="bar-track"><i class="model" style="width:${(a.model_score||0)*100}%"></i></div><b>${a.model_score===null?"—":Math.round(a.model_score*100)+"%"}</b></div><div class="score-bar"><span>Rule evidence</span><div class="bar-track"><i style="width:${a.rule_score*100}%"></i></div><b>${Math.round(a.rule_score*100)}%</b></div><div class="score-bar"><span>Graph signal</span><div class="bar-track"><i class="pattern" style="width:${a.pattern_score*100}%"></i></div><b>${Math.round(a.pattern_score*100)}%</b></div></div></article><article class="panel"><h3 class="section-title">Coordinated-return context</h3><div class="recommend"><strong>${a.pattern.pattern_id}</strong>${a.pattern.supporting_evidence}<br><br><small>Connected: ${a.pattern.connected_entities.join(" · ")}</small></div></article><article class="panel"><h3 class="section-title">Audit trail</h3><div class="timeline">${timeline}</div></article></div></div>`;
+  $("#detail-content").innerHTML=`<div class="detail-grid"><div class="detail-main"><article class="panel"><div class="case-identity"><div><div class="case-big">${c.return_id}</div><small>${c.customer_id} · ${c.product_id}</small></div><div class="identity-badge"><span>REFUND VALUE</span><strong>${money(c.refund_amount)}</strong></div></div><div class="detail-facts"><div><span>RETURN REASON</span><strong>${c.return_reason}</strong></div><div><span>ORIGINAL SKU</span><strong>${c.original_sku}</strong></div><div><span>RETURNED SKU</span><strong>${c.returned_sku}</strong></div><div><span>WAREHOUSE</span><strong>${c.warehouse_scan_result.replaceAll("_"," ")}</strong></div></div>${modelDisagreementMarkup(a)}</article><article class="panel"><h3 class="section-title">Deterministic evidence checks</h3>${rules}</article><article class="panel"><h3 class="section-title">Investigator summary</h3><div class="recommend"><strong>${a.investigator.summary}</strong>${a.investigator.why}</div><ul class="evidence-list">${evidence}</ul><div class="recommend"><strong>Recommended human-review questions</strong>${a.investigator.review_questions.join("<br>")}</div></article></div><div class="detail-side"><article class="panel"><div class="risk-card"><div class="risk-ring" style="--risk:${a.risk_percent}%"><span>${a.risk_percent}%</span></div><div class="risk-copy"><strong>${a.decision}</strong><small>${a.decision_reason}</small></div></div><div class="score-bars"><div class="score-bar"><span>ML model</span><div class="bar-track"><i class="model" style="width:${(a.model_score||0)*100}%"></i></div><b>${a.model_score===null?"—":Math.round(a.model_score*100)+"%"}</b></div><div class="score-bar"><span>Rule evidence</span><div class="bar-track"><i style="width:${a.rule_score*100}%"></i></div><b>${Math.round(a.rule_score*100)}%</b></div><div class="score-bar"><span>Graph signal</span><div class="bar-track"><i class="pattern" style="width:${a.pattern_score*100}%"></i></div><b>${Math.round(a.pattern_score*100)}%</b></div></div></article><article class="panel"><h3 class="section-title">Coordinated-return context</h3><div class="recommend"><strong>${a.pattern.pattern_id}</strong>${a.pattern.supporting_evidence}<br><br><small>Connected: ${a.pattern.connected_entities.join(" · ")}</small></div></article><article class="panel"><h3 class="section-title">Audit trail</h3><div class="timeline">${timeline}</div></article></div></div>`;
   const reviewMarkup=humanReviewMarkup(c,a);
   if(reviewMarkup){
     $("#detail-content").insertAdjacentHTML("beforeend",reviewMarkup);
@@ -200,8 +215,8 @@ async function loadSpikes(){
 async function loadEvaluation(){ const d=await api("/api/evaluation"); $("#eval-precision").textContent=(d.precision*100).toFixed(1)+"%"; $("#eval-recall").textContent=(d.recall*100).toFixed(1)+"%"; $("#eval-f1").textContent=(d.f1*100).toFixed(1)+"%"; $("#eval-prauc").textContent=d.pr_auc.toFixed(3); const m=d.confusion_matrix; $("#cm-tn").textContent=m[0][0].toLocaleString(); $("#cm-fp").textContent=m[0][1].toLocaleString(); $("#cm-fn").textContent=m[1][0].toLocaleString(); $("#cm-tp").textContent=m[1][1].toLocaleString(); $("#eval-fp").textContent=d.false_positives.toLocaleString(); $("#eval-fn").textContent=d.false_negatives.toLocaleString(); $("#eval-cost").textContent=money(d.false_positive_cost_per_case); $("#eval-prevented").textContent=money(d.fraudulent_refunds_prevented); $("#eval-held").textContent=money(d.legitimate_value_held); $("#eval-net").textContent=money(d.fraudulent_refunds_prevented-d.legitimate_value_held); $("#split-note").textContent=`${d.split} Dataset: ${d.dataset_size.toLocaleString()} cases · train ${d.train_size.toLocaleString()} · validation ${d.validation_size.toLocaleString()} · test ${d.test_size.toLocaleString()} · ROC-AUC ${d.roc_auc}`; $("#threshold-table").innerHTML=d.thresholds.map(x=>`<tr class="${x.threshold===.5?"current":""}"><td><strong>${x.threshold.toFixed(2)}</strong></td><td>${(x.precision*100).toFixed(1)}%</td><td>${(x.recall*100).toFixed(1)}%</td><td>${(x.f1*100).toFixed(1)}%</td><td>${x.false_positives}</td><td>${x.false_negatives}</td></tr>`).join(""); }
 async function loadAudit(){ const d=await api("/api/audit"); $("#audit-list").innerHTML=d.events.map(x=>`<div class="audit-item"><strong>${x.event_type.replaceAll("_"," ").toUpperCase()}</strong><span class="audit-case">${x.return_id}</span><span>${x.detail}</span><time>${new Date(x.created_at).toLocaleString("en-IN")}</time></div>`).join("") || `<p class="subhead">No case has been opened yet. Open a case to create its immutable verification trail.</p>`; }
 function navigate(page){ $$(".page").forEach(p=>p.classList.remove("active-page")); $(`#page-${page}`).classList.add("active-page"); $$(".nav-item").forEach(n=>n.classList.toggle("active",n.dataset.page===page)); $("#crumb-current").textContent=page.replaceAll("-"," ").toUpperCase(); window.scrollTo(0,0); if(page==="cases")loadCases(); if(page==="patterns")loadPatterns(); if(page==="spikes")loadSpikes(); if(page==="evaluation")loadEvaluation(); if(page==="audit")loadAudit(); }
-async function boot(){ const s=await fetch("/api/session").then(r=>r.json()); if(!s.authenticated){csrfToken=null;showLogin();return} if(s.csrf_token)csrfToken=s.csrf_token; showApp(); await loadOverview(); }
-$("#login-form").addEventListener("submit",async e=>{e.preventDefault(); const form=new FormData(e.target); try{const res=await api("/api/login",{method:"POST",body:JSON.stringify(Object.fromEntries(form))}); if(res.csrf_token)csrfToken=res.csrf_token; showApp(); await loadOverview();}catch(err){$("#login-error").textContent=err.message}});
+async function boot(){ const s=await fetch("/api/session").then(r=>r.json()); if(!s.authenticated){csrfToken=null;showLogin();return} if(s.csrf_token)csrfToken=s.csrf_token; currentUserRole=s.role||"Risk Analyst"; showApp(); await loadOverview(); }
+$("#login-form").addEventListener("submit",async e=>{e.preventDefault(); const form=new FormData(e.target); try{const res=await api("/api/login",{method:"POST",body:JSON.stringify(Object.fromEntries(form))}); if(res.csrf_token)csrfToken=res.csrf_token; currentUserRole=res.user?.role||"Risk Analyst"; showApp(); await loadOverview();}catch(err){$("#login-error").textContent=err.message}});
 $("#logout-btn").onclick=async()=>{try{await api("/api/logout",{method:"POST"});}catch(e){} csrfToken=null; showLogin();};
 $$(".nav-item").forEach(b=>b.onclick=()=>navigate(b.dataset.page));
 $$("[data-page-jump]").forEach(b=>b.onclick=()=>navigate(b.dataset.pageJump));
@@ -389,6 +404,49 @@ const DEMO_SCENARIOS = {
 
 };
 
+const pause = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+function setDemoStatus(message){
+  const status=$("#demo-stream-status");
+  if(!status) return;
+  status.textContent=message;
+  status.classList.remove("hidden");
+}
+async function startLiveDemo(){
+  if(demoRunning) return;
+  demoRunning=true;
+  const button=$("#start-demo-btn");
+  button.disabled=true;
+  button.textContent="Demo running…";
+  // Existing controlled synthetic scenarios are deliberately sequenced to
+  // demonstrate approve, hold, and human-review outcomes via /api/verify.
+  const stream=["legitimate", "sku_mismatch", "suspicious_history"];
+  try{
+    navigate("cases");
+    await loadCases();
+    for(let index=0; index<stream.length; index++){
+      const scenario=stream[index];
+      const label=scenario.replaceAll("_", " ");
+      const prefix=`Demo ${index+1}/${stream.length} · ${label}:`;
+      for(const stage of ["Evidence collected", "Rules executed", "ML scored", "Graph checked"]){
+        setDemoStatus(`${prefix} ${stage}…`);
+        await pause(300);
+      }
+      const payload={...DEMO_SCENARIOS[scenario], order_id:`${DEMO_SCENARIOS[scenario].order_id}-${Date.now()}-${index}`};
+      const result=await api("/api/verify", {method:"POST", body:JSON.stringify(payload)});
+      await loadCases();
+      setDemoStatus(`${prefix} Decision reached — ${result.decision}. Case ${result.return_id} is now in the live queue.`);
+      await pause(900);
+    }
+    setDemoStatus("Live demo complete — clean, hard-evidence, and ambiguous cases streamed through the existing pipeline.");
+  }catch(err){
+    setDemoStatus(`Demo paused: ${err.message || "case submission failed"}`);
+  }finally{
+    demoRunning=false;
+    button.disabled=false;
+    button.textContent="▶ Start Demo";
+  }
+}
+
 $("#demo-scenario-select").onchange = (e) => {
   const val = e.target.value;
 
@@ -415,6 +473,7 @@ $("#demo-scenario-select").onchange = (e) => {
 };
 
 $("#new-case-btn").onclick=openVerifyModal;
+$("#start-demo-btn").onclick=startLiveDemo;
 $("#close-verify-modal").onclick=closeVerifyModal;
 $("#cancel-verify-btn").onclick=closeVerifyModal;
 

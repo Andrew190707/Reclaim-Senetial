@@ -27,6 +27,40 @@ class SentinelEngineTests(unittest.TestCase):
         self.assertLessEqual(result["risk_score"], 1)
         self.assertIn(result["decision"], main.DECISIONS)
 
+    def test_low_ml_score_with_hard_rule_failure_is_exposed(self):
+        """The UI-facing analysis must disclose an evidence override, not rescore it."""
+        case = dict(self.clean)
+        case["returned_sku"] = "P-9999-B"
+        original_model = main.STATE["model"]
+
+        class LowRiskModel:
+            def predict_proba(self, _features):
+                return [[0.99, 0.01]]
+
+        try:
+            main.STATE["model"] = LowRiskModel()
+            result = main.analyze_case(case)
+        finally:
+            main.STATE["model"] = original_model
+
+        disagreement = result["model_rule_disagreement"]
+        self.assertEqual(disagreement["type"], "low_ml_hard_evidence_failure")
+        self.assertEqual(disagreement["evidence_failure_name"], "SKU mismatch")
+
+    def test_viewer_cannot_finalize_human_decision(self):
+        client = main.app.test_client()
+        with client.session_transaction() as sess:
+            sess["authenticated"] = True
+            sess["role"] = main.VIEWER_ROLE
+            sess["csrf_token"] = "test-csrf-token"
+        case_id = next(c["return_id"] for c in self.cases if main.analyze_case(c)["decision"] in main.HUMAN_REVIEW_DECISIONS)
+        resp = client.post(
+            f"/api/cases/{case_id}/human-decision",
+            json={"decision": "DENY REFUND", "reason": "Viewer should not finalize this."},
+            headers={"X-CSRF-Token": "test-csrf-token"},
+        )
+        self.assertEqual(resp.status_code, 403)
+
     def test_failure_fallback_never_approves(self):
         original = main.STATE["model"]
         main.STATE["model"] = None

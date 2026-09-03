@@ -1585,6 +1585,35 @@ tbody tr:last-child td {
   box-shadow: none;
 }
 
+/* Rule and model intentionally disagree: make that conservative override explicit. */
+.model-disagreement {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border: 1px solid rgba(250, 204, 21, 0.55);
+  border-radius: 9px;
+  background: rgba(250, 204, 21, 0.09);
+  color: var(--text-primary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.model-disagreement strong { color: var(--yellow); }
+
+.demo-stream-status {
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  border-radius: 8px;
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--text-secondary);
+  font: 12px "JetBrains Mono", monospace;
+}
+
+.demo-stream-status.hidden { display: none; }
+
 /* Patterns & Spikes */
 .pattern-row {
   display: grid;
