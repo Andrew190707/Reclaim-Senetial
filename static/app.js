@@ -163,6 +163,34 @@ $$("[data-page-jump]").forEach(b=>b.onclick=()=>navigate(b.dataset.pageJump));
 $("#filter-risk").onchange=loadCases; $("#filter-reason").onchange=loadCases; $("#case-search").oninput=()=>renderCases(casesData||[]);
 $("#refresh-audit").onclick=loadAudit;
 
+const notificationBtn = $("#notifications-btn");
+const notificationPanel = $("#notification-panel");
+const notificationClose = $("#notification-close");
+
+if (notificationBtn && notificationPanel) {
+  notificationBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    notificationPanel.classList.toggle("open");
+  });
+}
+
+if (notificationClose && notificationPanel) {
+  notificationClose.addEventListener("click", (e) => {
+    e.stopPropagation();
+    notificationPanel.classList.remove("open");
+  });
+}
+
+document.addEventListener("click", (e) => {
+  if (
+    notificationPanel &&
+    notificationPanel.classList.contains("open") &&
+    !notificationPanel.contains(e.target) &&
+    e.target !== notificationBtn
+  ) {
+    notificationPanel.classList.remove("open");
+  }
+});
 function openVerifyModal(){
   const modal=$("#verify-modal-backdrop");
   if(modal) modal.classList.remove("hidden");

@@ -53,9 +53,40 @@
     <main class="main">
       <header class="topbar">
         <div class="breadcrumb"><span>WORKSPACE</span><b>/</b><span id="crumb-current">OVERVIEW</span></div>
-        <div class="top-actions"><span class="live-time"><i></i> Live monitoring</span><button class="icon-btn" aria-label="Notifications">♧<b>3</b></button><button class="avatar top-avatar">RO</button></div>
+        <div class="top-actions"><span class="live-time"><i></i> Live monitoring</span><button class="icon-btn" id="notifications-btn" aria-label="Notifications">
+         ♧<b>3</b>
+         </button></div>
       </header>
+      <div id="notification-panel" class="notification-panel">
+  <div class="notification-header">
+    <strong>Notifications</strong>
+    <button id="notification-close" class="notification-close">×</button>
+  </div>
 
+  <div class="notification-item">
+    <span class="notification-dot high"></span>
+    <div>
+      <strong>Return spike detected</strong>
+      <small>Merchant M-014 is 2.8σ above baseline.</small>
+    </div>
+  </div>
+
+  <div class="notification-item">
+    <span class="notification-dot medium"></span>
+    <div>
+      <strong>Coordinated clusters</strong>
+      <small>4 return clusters require investigation.</small>
+    </div>
+  </div>
+
+  <div class="notification-item">
+    <span class="notification-dot medium"></span>
+    <div>
+      <strong>Evidence gaps</strong>
+      <small>12 cases are missing warehouse scans.</small>
+    </div>
+  </div>
+</div>
       <section id="page-overview" class="page active-page">
         <div class="page-heading"><div><p class="eyebrow">TUESDAY · 01 SEP 2026</p><h1>Good morning, <em>Risk Ops.</em></h1><p class="subhead">Here’s what needs your attention across return verification.</p></div><button class="btn btn-secondary" data-page-jump="cases">View all cases <span>→</span></button></div>
         <div class="metric-grid">

@@ -1,5 +1,5 @@
 /* ==========================================================================
-   FINOVA Navy — Premium Fintech SaaS Theme
+   Navy — Premium SaaS Theme
    High-precision, Dark-mode-first Enterprise Financial Command Center
    ========================================================================== */
 
@@ -2063,4 +2063,91 @@ tbody tr:last-child td {
   .verify-form .form-grid { grid-template-columns: 1fr; }
   .login-card { width: calc(100% - 32px); padding: 28px 20px; }
   .cases-panel { padding: 16px; }
+}
+/* Notification popover */
+.notification-panel {
+  position: fixed;
+  top: 76px;
+  right: 32px;
+  width: 340px;
+  background: var(--bg-card-solid);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
+  z-index: 200;
+  display: none;
+  overflow: hidden;
+}
+
+.notification-panel.open {
+  display: block;
+}
+
+.notification-header {
+  padding: 16px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--border);
+}
+
+.notification-header strong {
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.notification-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.notification-close:hover {
+  color: var(--text-primary);
+}
+
+.notification-item {
+  display: flex;
+  gap: 12px;
+  padding: 15px 18px;
+  border-bottom: 1px solid var(--border);
+}
+
+.notification-item:last-child {
+  border-bottom: none;
+}
+
+.notification-item strong {
+  display: block;
+  color: var(--text-primary);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
+.notification-item small {
+  display: block;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.notification-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.notification-dot.high {
+  background: var(--rose);
+  box-shadow: 0 0 8px var(--rose);
+}
+
+.notification-dot.medium {
+  background: var(--amber);
+  box-shadow: 0 0 8px var(--amber);
 }
