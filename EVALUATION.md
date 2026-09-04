@@ -2,7 +2,7 @@
 
 Metrics are computed at startup from the generated held-out test set and exposed live at `/api/evaluation` and in the Model Evaluation page. They are never hardcoded in the dashboard.
 
-The default classifier threshold is 0.50. The page reports precision, recall, F1, ROC-AUC, PR-AUC, confusion matrix, false-positive and false-negative counts, explicit false-positive cost, fraudulent refund amount detected, legitimate value incorrectly held, and a threshold trade-off table.
+The locked classifier threshold is 0.35. The page reports precision, recall, F1, ROC-AUC, PR-AUC, confusion matrix, false-positive and false-negative counts, explicit false-positive cost, fraudulent refund amount detected, legitimate value incorrectly held, and a threshold trade-off table.
 
 The business impact calculation is:
 

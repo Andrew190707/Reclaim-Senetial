@@ -25,7 +25,8 @@ function showLogin(){ $("#login-screen").classList.remove("hidden"); $("#app-she
 function showApp(){ $("#login-screen").classList.add("hidden"); $("#app-shell").classList.remove("hidden"); }
 function toast(message){ const el=$("#toast"); el.textContent=message; el.classList.add("show"); setTimeout(()=>el.classList.remove("show"),2800); }
 function caseRow(c, compact=false) {
-  return `<tr data-case="${c.return_id}"><td><div class="case-cell"><strong>${c.return_id}</strong><small>${c.customer_id}</small></div></td><td>${c.merchant_id}</td><td>${c.return_reason}</td><td class="amount">${money(c.refund_amount)}</td><td class="risk-cell ${riskClass(c.risk_score)}">${c.risk_percent}%</td><td><span class="verdict ${decisionClass(c.decision)}">${decisionShort(c.decision)}</span></td><td>${date(c.return_request_timestamp)}</td><td>→</td></tr>`;
+  const demoTag=c.is_demo ? `<small class="demo-case-tag">DEMO</small>` : "";
+  return `<tr data-case="${c.return_id}"><td><div class="case-cell"><strong>${c.return_id}</strong>${demoTag}<small>${c.customer_id}</small></div></td><td>${c.merchant_id}</td><td>${c.return_reason}</td><td class="amount">${money(c.refund_amount)}</td><td class="risk-cell ${riskClass(c.risk_score)}">${c.risk_percent}%</td><td><span class="verdict ${decisionClass(c.decision)}">${decisionShort(c.decision)}</span></td><td>${date(c.return_request_timestamp)}</td><td>→</td></tr>`;
 }
 function bindCaseRows(){ $$("tr[data-case]").forEach(row=>row.addEventListener("click",()=>openDetail(row.dataset.case))); }
 async function loadOverview(){
@@ -34,6 +35,8 @@ async function loadOverview(){
   $("#metric-value").textContent = money(overviewData.protected_value);
   $("#metric-review").textContent = overviewData.pending_review.toLocaleString("en-IN");
   $("#nav-case-count").textContent = (overviewData.total_cases/1000).toFixed(1)+"K";
+  const today=new Date();
+  $("#overview-date").textContent=`${today.toLocaleDateString("en-IN",{weekday:"long"}).toUpperCase()} · ${today.toLocaleDateString("en-IN",{day:"2-digit",month:"short",year:"numeric"}).toUpperCase()}`;
   const d=overviewData.decisions, total=overviewData.reviewed_cases;
   const approve = d["APPROVE REFUND"] || 0;
   const hold = d["HOLD REFUND"] || 0;
@@ -196,7 +199,11 @@ async function openDetail(id){
       };
     });
 
-    $("#finalize-human-decision").onclick=()=>finalizeHumanDecision(c.return_id);
+    const finalizeBtn=$("#finalize-human-decision");
+
+    if(finalizeBtn){
+      finalizeBtn.onclick=()=>finalizeHumanDecision(c.return_id);
+    }
   }
 }
 async function loadPatterns(){ const d=await api("/api/patterns"); $("#graph-nodes").textContent=d.graph_nodes.toLocaleString("en-IN"); $("#linked-cases").textContent=d.linked_cases.toLocaleString("en-IN"); $("#active-clusters").textContent=d.patterns.length.toString().padStart(2,"0"); $("#patterns-list").innerHTML=d.patterns.map(p=>`<div class="pattern-row"><strong>${p.pattern_id}</strong><p>${p.supporting_evidence}<br><small>${p.connected_entities.join(" · ")}</small></p><span class="confidence">${Math.round(p.confidence*100)}% <small>confidence</small></span><button class="text-link" data-open-case="${p.case_id}">Inspect →</button></div>`).join("") || `<p class="subhead">No coordinated patterns met the evidence threshold.</p>`; $$("[data-open-case]").forEach(b=>b.onclick=()=>openDetail(b.dataset.openCase)); }
@@ -212,11 +219,13 @@ async function loadSpikes(){
 
   $$("[data-open-case]").forEach(b=>b.onclick=()=>openDetail(b.dataset.openCase));
 }
-async function loadEvaluation(){ const d=await api("/api/evaluation"); $("#eval-precision").textContent=(d.precision*100).toFixed(1)+"%"; $("#eval-recall").textContent=(d.recall*100).toFixed(1)+"%"; $("#eval-f1").textContent=(d.f1*100).toFixed(1)+"%"; $("#eval-prauc").textContent=d.pr_auc.toFixed(3); const m=d.confusion_matrix; $("#cm-tn").textContent=m[0][0].toLocaleString(); $("#cm-fp").textContent=m[0][1].toLocaleString(); $("#cm-fn").textContent=m[1][0].toLocaleString(); $("#cm-tp").textContent=m[1][1].toLocaleString(); $("#eval-fp").textContent=d.false_positives.toLocaleString(); $("#eval-fn").textContent=d.false_negatives.toLocaleString(); $("#eval-cost").textContent=money(d.false_positive_cost_per_case); $("#eval-prevented").textContent=money(d.fraudulent_refunds_prevented); $("#eval-held").textContent=money(d.legitimate_value_held); $("#eval-net").textContent=money(d.fraudulent_refunds_prevented-d.legitimate_value_held); $("#split-note").textContent=`${d.split} Dataset: ${d.dataset_size.toLocaleString()} cases · train ${d.train_size.toLocaleString()} · validation ${d.validation_size.toLocaleString()} · test ${d.test_size.toLocaleString()} · ROC-AUC ${d.roc_auc}`; $("#threshold-table").innerHTML=d.thresholds.map(x=>`<tr class="${x.threshold===.5?"current":""}"><td><strong>${x.threshold.toFixed(2)}</strong></td><td>${(x.precision*100).toFixed(1)}%</td><td>${(x.recall*100).toFixed(1)}%</td><td>${(x.f1*100).toFixed(1)}%</td><td>${x.false_positives}</td><td>${x.false_negatives}</td></tr>`).join(""); }
+async function loadEvaluation(){ const d=await api("/api/evaluation"); $("#eval-precision").textContent=(d.precision*100).toFixed(1)+"%"; $("#eval-recall").textContent=(d.recall*100).toFixed(1)+"%"; $("#eval-f1").textContent=(d.f1*100).toFixed(1)+"%"; $("#eval-prauc").textContent=d.pr_auc.toFixed(3); const m=d.confusion_matrix; $("#cm-tn").textContent=m[0][0].toLocaleString(); $("#cm-fp").textContent=m[0][1].toLocaleString(); $("#cm-fn").textContent=m[1][0].toLocaleString(); $("#cm-tp").textContent=m[1][1].toLocaleString(); $("#eval-fp").textContent=d.false_positives.toLocaleString(); $("#eval-fn").textContent=d.false_negatives.toLocaleString(); $("#eval-cost").textContent=money(d.false_positive_cost_per_case); $("#eval-prevented").textContent=money(d.fraudulent_refunds_prevented); $("#eval-held").textContent=money(d.legitimate_value_held); $("#eval-net").textContent=money(d.fraudulent_refunds_prevented-d.legitimate_value_held); $("#split-note").textContent=`${d.split} Dataset: ${d.dataset_size.toLocaleString()} cases · train ${d.train_size.toLocaleString()} · validation ${d.validation_size.toLocaleString()} · test ${d.test_size.toLocaleString()} · ROC-AUC ${d.roc_auc}`; const threshold=d.locked_threshold; $(".threshold-panel .method-note").textContent=`CURRENT THRESHOLD · ${threshold.toFixed(2)}`; $("#threshold-table").innerHTML=d.thresholds.map(x=>`<tr class="${x.threshold===threshold?"current":""}"><td><strong>${x.threshold.toFixed(2)}</strong></td><td>${(x.precision*100).toFixed(1)}%</td><td>${(x.recall*100).toFixed(1)}%</td><td>${(x.f1*100).toFixed(1)}%</td><td>${x.false_positives}</td><td>${x.false_negatives}</td></tr>`).join(""); }
 async function loadAudit(){ const d=await api("/api/audit"); $("#audit-list").innerHTML=d.events.map(x=>`<div class="audit-item"><strong>${x.event_type.replaceAll("_"," ").toUpperCase()}</strong><span class="audit-case">${x.return_id}</span><span>${x.detail}</span><time>${new Date(x.created_at).toLocaleString("en-IN")}</time></div>`).join("") || `<p class="subhead">No case has been opened yet. Open a case to create its immutable verification trail.</p>`; }
 function navigate(page){ $$(".page").forEach(p=>p.classList.remove("active-page")); $(`#page-${page}`).classList.add("active-page"); $$(".nav-item").forEach(n=>n.classList.toggle("active",n.dataset.page===page)); $("#crumb-current").textContent=page.replaceAll("-"," ").toUpperCase(); window.scrollTo(0,0); if(page==="cases")loadCases(); if(page==="patterns")loadPatterns(); if(page==="spikes")loadSpikes(); if(page==="evaluation")loadEvaluation(); if(page==="audit")loadAudit(); }
-async function boot(){ const s=await fetch("/api/session").then(r=>r.json()); if(!s.authenticated){csrfToken=null;showLogin();return} if(s.csrf_token)csrfToken=s.csrf_token; currentUserRole=s.role||"Risk Analyst"; showApp(); await loadOverview(); }
-$("#login-form").addEventListener("submit",async e=>{e.preventDefault(); const form=new FormData(e.target); try{const res=await api("/api/login",{method:"POST",body:JSON.stringify(Object.fromEntries(form))}); if(res.csrf_token)csrfToken=res.csrf_token; currentUserRole=res.user?.role||"Risk Analyst"; showApp(); await loadOverview();}catch(err){$("#login-error").textContent=err.message}});
+function syncUserRole(role){ currentUserRole=role||"Risk Analyst"; $("#user-role").textContent=currentUserRole; }
+function normalizeDemoSignalCopy(){ const signals=$$("#page-overview .signal-item"); $("#page-overview .signal-panel .eyebrow").textContent="DEMO SIGNAL WATCH"; const copy=[["Return spikes","Flags merchants whose return activity deviates from its own baseline."],["Linked return patterns","Uses shared identifiers as supporting evidence, never as the only decision."],["Evidence gaps","Routes incomplete courier or warehouse evidence to human review."]]; signals.forEach((signal,index)=>{const text=signal.querySelector("div:last-of-type"); if(text) text.innerHTML=`<strong>${copy[index][0]}</strong><small>${copy[index][1]}</small>`;}); }
+async function boot(){ const s=await fetch("/api/session").then(r=>r.json()); if(!s.authenticated){csrfToken=null;showLogin();return} if(s.csrf_token)csrfToken=s.csrf_token; syncUserRole(s.role); normalizeDemoSignalCopy(); showApp(); await loadOverview(); }
+$("#login-form").addEventListener("submit",async e=>{e.preventDefault(); const form=new FormData(e.target); try{const res=await api("/api/login",{method:"POST",body:JSON.stringify(Object.fromEntries(form))}); if(res.csrf_token)csrfToken=res.csrf_token; syncUserRole(res.user?.role); normalizeDemoSignalCopy(); showApp(); await loadOverview();}catch(err){$("#login-error").textContent=err.message}});
 $("#logout-btn").onclick=async()=>{try{await api("/api/logout",{method:"POST"});}catch(e){} csrfToken=null; showLogin();};
 $$(".nav-item").forEach(b=>b.onclick=()=>navigate(b.dataset.page));
 $$("[data-page-jump]").forEach(b=>b.onclick=()=>navigate(b.dataset.pageJump));
@@ -431,7 +440,7 @@ async function startLiveDemo(){
         setDemoStatus(`${prefix} ${stage}…`);
         await pause(300);
       }
-      const payload={...DEMO_SCENARIOS[scenario], order_id:`${DEMO_SCENARIOS[scenario].order_id}-${Date.now()}-${index}`};
+      const payload={...DEMO_SCENARIOS[scenario], demo_case:true, order_id:`${DEMO_SCENARIOS[scenario].order_id}-${Date.now()}-${index}`};
       const result=await api("/api/verify", {method:"POST", body:JSON.stringify(payload)});
       await loadCases();
       setDemoStatus(`${prefix} Decision reached — ${result.decision}. Case ${result.return_id} is now in the live queue.`);

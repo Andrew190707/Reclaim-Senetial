@@ -1599,6 +1599,17 @@ tbody tr:last-child td {
 
 .model-disagreement strong { color: var(--yellow); }
 
+.demo-case-tag {
+  display: inline-block;
+  margin-left: 7px;
+  padding: 2px 5px;
+  border: 1px solid rgba(99, 102, 241, 0.55);
+  border-radius: 4px;
+  color: var(--purple);
+  font: 600 8px "JetBrains Mono", monospace;
+  vertical-align: middle;
+}
+
 .demo-stream-status {
   display: flex;
   align-items: center;

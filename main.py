@@ -50,7 +50,17 @@ DEMO_ROLE = os.environ.get("DEMO_ROLE", RISK_ANALYST_ROLE)
 if DEMO_ROLE not in (RISK_ANALYST_ROLE, VIEWER_ROLE):
     DEMO_ROLE = RISK_ANALYST_ROLE
 AUDIT_LOCK = Lock()
-STATE = {"cases": [], "model": None, "metrics": {}, "audit": [], "indexes": {}, "graph": None, "human_decisions": {}}
+STATE = {
+    "cases": [],
+    "model": None,
+    "metrics": {},
+    "audit": [],
+    "indexes": {},
+    "graph": None,
+    "analysis_cache": {},
+    "pattern_cache": {},
+    "human_decisions": {}
+}
 REQUIRED_CASE_FIELDS = {
     "return_id", "merchant_id", "customer_id", "original_sku", "returned_sku",
     "original_package_weight", "returned_package_weight", "purchase_timestamp",
@@ -990,6 +1000,16 @@ def warm_state():
     init_db(cases)
     model, metrics = train_model(cases)
     STATE.update({"cases": cases, "model": model, "metrics": metrics, "indexes": make_indexes(cases), "graph": make_relationship_graph(cases)})
+    STATE["analysis_cache"].clear()
+    STATE["pattern_cache"].clear()
+
+    # Pre-compute the cases used by the Return Cases list.
+    # This moves the expensive work to startup so the UI loads quickly.
+    for case in cases[:120]:
+        cached_case_analysis(case)
+    # Pre-compute the sampled cases used by Abuse Patterns.
+    for case in cases[::11]:
+        STATE["pattern_cache"][case["return_id"]] = pattern_analysis(case)
     conn = sqlite3.connect(DB_PATH)
     rows = conn.execute("SELECT return_id,event_type,detail,created_at FROM audit_log ORDER BY id").fetchall()
     STATE["audit"] = [{"return_id": r[0], "event_type": r[1], "detail": r[2], "created_at": r[3]} for r in rows]
@@ -1050,10 +1070,16 @@ def logout():
 def session_status():
     return jsonify({"authenticated": bool(session.get("authenticated")), "csrf_token": csrf_token() if session.get("authenticated") else None, "role": session.get("role", RISK_ANALYST_ROLE) if session.get("authenticated") else None, "demo": f"{DEMO_USERNAME} / {DEMO_PASSWORD}"})
 
+def cached_case_analysis(case):
+    return_id = case["return_id"]
+
+    if return_id not in STATE["analysis_cache"]:
+        STATE["analysis_cache"][return_id] = analyze_case(case)
+
+    return STATE["analysis_cache"][return_id]
 
 def case_card(case):
-    result = analyze_case(case)
-    human = get_human_decision(case["return_id"])
+    result = cached_case_analysis(case)
     return {
         "return_id": case["return_id"],
         "merchant_id": case["merchant_id"],
@@ -1064,7 +1090,9 @@ def case_card(case):
         "decision": result["decision"],
         "risk_score": result["risk_score"],
         "risk_percent": result["risk_percent"],
-        "final_decision": human["final_decision"] if human else None,
+        "is_demo": bool(case.get("demo_case")),
+        "final_decision": STATE["human_decisions"].get(case["return_id"], {}).get("final_decision")
+            if STATE.get("human_decisions") else None,
     }
 
 @app.get("/api/overview")
@@ -1083,7 +1111,7 @@ def list_cases():
         cases = [c for c in cases if c["merchant_id"] == args["merchant"]]
     if args.get("risk"):
         threshold = {"low": (0, .35), "medium": (.35, .65), "high": (.65, 1)}.get(args["risk"], (0, 1))
-        cases = [c for c in cases if threshold[0] <= analyze_case(c)["risk_score"] < threshold[1]]
+        cases = [c for c in cases if threshold[0] <= cached_case_analysis(c)["risk_score"] < threshold[1]]
     if args.get("reason"):
         cases = [c for c in cases if c["return_reason"] == args["reason"]]
     return jsonify({"cases": [case_card(c) for c in cases[:120]], "count": len(cases), "merchants": sorted({c["merchant_id"] for c in STATE["cases"]}), "reasons": sorted({c["return_reason"] for c in STATE["cases"]})})
@@ -1114,15 +1142,39 @@ def case_detail(return_id):
 @authenticated
 def patterns():
     patterns, seen = [], set()
+
     for case in STATE["cases"][::11]:
-        pattern = pattern_analysis(case)
-        if pattern["pattern_id"] != "COORD-RET-000" and pattern["pattern_id"] not in seen:
+        pattern = STATE["pattern_cache"].get(
+            case["return_id"],
+            pattern_analysis(case)
+        )
+
+        if (
+            pattern["pattern_id"] != "COORD-RET-000"
+            and pattern["pattern_id"] not in seen
+        ):
             seen.add(pattern["pattern_id"])
-            patterns.append({"merchant_id": case["merchant_id"], "case_id": case["return_id"], **pattern})
+            patterns.append({
+                "merchant_id": case["merchant_id"],
+                "case_id": case["return_id"],
+                **pattern
+            })
+
         if len(patterns) >= 8:
             break
-    return jsonify({"patterns": patterns, "graph_nodes": STATE["graph"].number_of_nodes(), "graph_edges": STATE["graph"].number_of_edges(), "linked_cases": sum(1 for c in STATE["cases"] if pattern_analysis(c)["score"] > .35)})
 
+    linked_cases = sum(
+        1
+        for pattern in STATE["pattern_cache"].values()
+        if pattern["score"] > .35
+    )
+
+    return jsonify({
+        "patterns": patterns,
+        "graph_nodes": STATE["graph"].number_of_nodes(),
+        "graph_edges": STATE["graph"].number_of_edges(),
+        "linked_cases": linked_cases
+    })
 
 @app.get("/api/spikes")
 @authenticated
@@ -1151,7 +1203,10 @@ def evaluation():
 @app.get("/api/audit")
 @authenticated
 def audit():
-    return jsonify({"events": STATE["audit"][-200:][::-1], "immutable": True})
+    return jsonify({
+    "events": STATE["audit"][-50:][::-1],
+    "immutable": True
+})
 
 
 @app.post("/api/dev-reset")
@@ -1246,6 +1301,7 @@ def human_decision(return_id):
 
 @app.post("/api/cases/<return_id>/override")
 @authenticated
+@risk_analyst_required
 def override_case(return_id):
     if not valid_csrf():
         return jsonify({"error": "CSRF validation failed"}), 403
